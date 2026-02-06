@@ -28,6 +28,15 @@ function booleanFlag(defaultValue: boolean) {
 const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   GENKIT_MODEL: z.string().default("googleai/gemini-2.5-flash"),
+  GENKIT_BASEURL: z.preprocess(
+    (value) => {
+      if (typeof value === "string" && value.trim() === "") {
+        return undefined;
+      }
+      return value;
+    },
+    z.string().url().optional(),
+  ),
   GENKIT_PROMPT_VERSION: z.string().default("v1"),
   PRODUCER_PROMPT_NAME: z.string().default("seo-article"),
   HUGO_CONTENT_DIR: z.string().default("./hugo-site/content/posts"),

@@ -176,6 +176,7 @@ SMOKE_SEED_COUNT=5 npm run seed:sample
 
 - `DATABASE_URL`
 - `GENKIT_MODEL`
+- `GENKIT_BASEURL`（可选，用于 OpenAI-compatible base URL；启用后默认 provider 名为 `compat`）
 - `GENKIT_PROMPT_VERSION`
 - `PRODUCER_PROMPT_NAME`
 - `HUGO_CONTENT_DIR`
@@ -192,6 +193,36 @@ SMOKE_SEED_COUNT=5 npm run seed:sample
 - `RSYNC_DRY_RUN`
 - `SMOKE_SEED_COUNT`
 - `ALERT_WEBHOOK_URL`
+
+当 `GENKIT_BASEURL` 已设置时：
+- Producer 会使用 `@genkit-ai/compat-oai` 插件。
+- 若 `GENKIT_MODEL` 不含 provider 前缀（不含 `/`），会自动映射为 `compat/<GENKIT_MODEL>`。
+- 若 `GENKIT_MODEL` 已是完整形式（如 `compat/gpt-4o-mini`），则按原值使用。
+
+### 配置模板（可直接复制）
+
+#### Google GenAI（默认）
+
+```env
+GENKIT_MODEL=googleai/gemini-2.5-flash
+GENKIT_BASEURL=
+```
+
+#### OpenAI-compatible（自定义 baseURL）
+
+```env
+GENKIT_BASEURL=https://your-openai-compatible-endpoint/v1
+GENKIT_MODEL=gpt-4o-mini
+OPENAI_API_KEY=your_api_key_here
+```
+
+也可写完整模型名：
+
+```env
+GENKIT_BASEURL=https://your-openai-compatible-endpoint/v1
+GENKIT_MODEL=compat/gpt-4o-mini
+OPENAI_API_KEY=your_api_key_here
+```
 
 ---
 

@@ -6,8 +6,8 @@
   "scripts": {
     "migrate": "tsx db/migrate.ts",
     "bootstrap": "tsx db/bootstrap.ts",
-    "pg:up": "docker compose up -d postgres",
-    "pg:down": "docker compose down",
+    "pg:up": "sudo docker compose up -d postgres",
+    "pg:down": "sudo docker compose down",
     "producer": "tsx apps/producer/src/cli.ts",
     "seed:sample": "tsx apps/producer/src/sample-seed.ts",
     "renderer": "tsx apps/renderer/src/cli.ts",
@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.25.0",
+    "@genkit-ai/compat-oai": "^1.25.0",
     "genkit": "^1.25.0",
     "node-cron": "^4.2.1",
     "dotenv": "^16.4.7",
