@@ -194,10 +194,11 @@ SMOKE_SEED_COUNT=5 npm run seed:sample
 - `SMOKE_SEED_COUNT`
 - `ALERT_WEBHOOK_URL`
 
-当 `GENKIT_BASEURL` 已设置时：
-- Producer 会使用 `@genkit-ai/compat-oai` 插件。
-- 若 `GENKIT_MODEL` 不含 provider 前缀（不含 `/`），会自动映射为 `compat/<GENKIT_MODEL>`。
-- 若 `GENKIT_MODEL` 已是完整形式（如 `compat/gpt-4o-mini`），则按原值使用。
+模型路由规则：
+- `GENKIT_MODEL` 必须显式包含 provider 前缀（例如 `googleai/gemini-2.5-flash`、`compat/gpt-4o-mini`）。
+- Genkit 会按模型名前缀路由到对应 provider。
+- 当设置 `GENKIT_BASEURL` 时，会额外注册 `compat` provider（`@genkit-ai/compat-oai`）。
+- 若未设置 `GENKIT_BASEURL`，则仅注册 `googleai` provider。
 
 ### 配置模板（可直接复制）
 
@@ -209,14 +210,6 @@ GENKIT_BASEURL=
 ```
 
 #### OpenAI-compatible（自定义 baseURL）
-
-```env
-GENKIT_BASEURL=https://your-openai-compatible-endpoint/v1
-GENKIT_MODEL=gpt-4o-mini
-OPENAI_API_KEY=your_api_key_here
-```
-
-也可写完整模型名：
 
 ```env
 GENKIT_BASEURL=https://your-openai-compatible-endpoint/v1

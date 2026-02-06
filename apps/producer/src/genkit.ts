@@ -5,27 +5,27 @@ import { getEnv } from "../../common/src/env.js";
 
 const env = getEnv();
 const compatProviderName = "compat";
-const useCompatProvider = Boolean(env.GENKIT_BASEURL);
 
-const plugins = useCompatProvider
-  ? [
-      openAICompatible({
-        name: compatProviderName,
-        apiKey: process.env.OPENAI_API_KEY ?? "compat-placeholder",
-        baseURL: env.GENKIT_BASEURL!,
-      }),
-    ]
-  : [googleAI()];
+if (!env.GENKIT_MODEL.includes("/")) {
+  throw new Error(
+    "GENKIT_MODEL must include provider prefix (for example: googleai/gemini-2.5-flash or compat/gpt-4o-mini)",
+  );
+}
 
-const resolvedModel = useCompatProvider
-  ? env.GENKIT_MODEL.includes("/")
-    ? env.GENKIT_MODEL
-    : `${compatProviderName}/${env.GENKIT_MODEL}`
-  : env.GENKIT_MODEL;
+const plugins = [googleAI()];
+if (env.GENKIT_BASEURL) {
+  plugins.push(
+    openAICompatible({
+      name: compatProviderName,
+      apiKey: process.env.OPENAI_API_KEY ?? "compat-placeholder",
+      baseURL: env.GENKIT_BASEURL,
+    }),
+  );
+}
 
 export const ai = genkit({
   plugins,
-  model: resolvedModel,
+  model: env.GENKIT_MODEL,
   promptDir: "./apps/producer/prompts",
 });
 
