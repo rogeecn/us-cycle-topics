@@ -89,6 +89,28 @@ async function main(): Promise<void> {
       description,
       tags,
       content,
+      audience: "Small recycling operators evaluating practical process options",
+      intent: "Understand practical price and execution factors before choosing a workflow",
+      keyTakeaways: [
+        "Compare at least two practical execution options",
+        "Use a fixed checklist before final decision",
+        "Track operational constraints before committing",
+      ],
+      decisionChecklist: [
+        "Confirm delivery timeline and required constraints",
+        "Compare two options with cost and risk side-by-side",
+        "Validate required tooling and labor availability",
+        "Set a review checkpoint after first execution cycle",
+      ],
+      commonMistakes: [
+        "Choosing only on initial price and ignoring execution risk",
+        "Skipping baseline metrics before process changes",
+        "Not defining responsibility for follow-up review",
+      ],
+      evidenceNotes: [
+        "Local process constraints often drive outcomes more than headline pricing",
+        "Pilot-first execution reduces rework risk before scale-up",
+      ],
     });
 
     const rawJson = {
@@ -119,6 +141,9 @@ async function main(): Promise<void> {
       rawJson,
       qualityReport,
       contentHash,
+      statusAfterQuality: qualityReport.passed ? "generated" : "failed",
+      lastError: qualityReport.passed ? null : "quality validation failed",
+      reviewReason: qualityReport.passed ? null : "seed_quality_fail",
     });
 
     logger.info("seed record upserted", {
