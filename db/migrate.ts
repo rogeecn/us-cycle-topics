@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
@@ -22,31 +22,49 @@ async function migrationApplied(pool: Pool, version: string): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
+async function listMigrationFiles(): Promise<string[]> {
+  const migrationDir = path.resolve(process.cwd(), "db/migrations");
+  const entries = await readdir(migrationDir, { withFileTypes: true });
+
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+async function applySingleMigration(pool: Pool, fileName: string): Promise<void> {
+  const version = fileName.replace(/\.sql$/, "");
+
+  if (await migrationApplied(pool, version)) {
+    logger.info("migration already applied", { version });
+    return;
+  }
+
+  const sqlPath = path.resolve(process.cwd(), "db/migrations", fileName);
+  const sql = await readFile(sqlPath, "utf8");
+
+  await pool.query(sql);
+  await pool.query(
+    "INSERT INTO schema_migrations(version, applied_at) VALUES ($1, NOW())",
+    [version],
+  );
+
+  logger.info("migration applied", { version });
+}
+
 export async function runMigration(): Promise<void> {
   const env = getEnv();
   const pool = new Pool({ connectionString: env.DATABASE_URL });
-  const version = "001_init";
 
   try {
     await ensureMigrationsTable(pool);
-
-    if (await migrationApplied(pool, version)) {
-      logger.info("migration already applied", { version });
-      return;
-    }
-
-    const sqlPath = path.resolve(process.cwd(), "db/migrations/001_init.sql");
-    const sql = await readFile(sqlPath, "utf8");
+    const migrationFiles = await listMigrationFiles();
 
     await pool.query("BEGIN");
-    await pool.query(sql);
-    await pool.query(
-      "INSERT INTO schema_migrations(version, applied_at) VALUES ($1, NOW())",
-      [version],
-    );
+    for (const fileName of migrationFiles) {
+      await applySingleMigration(pool, fileName);
+    }
     await pool.query("COMMIT");
-
-    logger.info("migration applied", { version });
   } catch (error) {
     await pool.query("ROLLBACK");
     throw error;
