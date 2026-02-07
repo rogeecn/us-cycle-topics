@@ -119,10 +119,15 @@ npm run pg:down
 
 ```bash
 npm run producer -- --topic "Scrap Forklift" --city "Houston" --keyword "forklift scrap value houston"
+npm run eval:run -- --dataset=scripts/eval-dataset.json
 npm run renderer -- --mode=incremental
 npm run pipeline -- --mode=incremental
 npm run pipeline -- --mode=full
 npm run scheduler
+npm run review -- list --limit 20
+npm run review -- stats
+npm run review -- approve --id 123 --reviewer alice --notes "checked and approved"
+npm run review -- reject --id 124 --reviewer alice --notes "needs rewrite"
 ```
 
 ### 诊断与验证
@@ -144,6 +149,12 @@ npm run publish:dry-run
 
 ```bash
 npm run smoke
+```
+
+### Prompt 评估集回归（Starter）
+
+```bash
+npm run eval:run -- --dataset=scripts/eval-dataset.json
 ```
 
 ---
@@ -178,7 +189,10 @@ SMOKE_SEED_COUNT=5 npm run seed:sample
 - `GENKIT_MODEL`
 - `GENKIT_BASEURL`（可选，用于 OpenAI-compatible base URL；启用后默认 provider 名为 `compat`）
 - `GENKIT_PROMPT_VERSION`
+- `PRODUCER_OUTLINE_PROMPT_NAME`
 - `PRODUCER_PROMPT_NAME`
+- `QUALITY_MIN_SCORE`
+- `NEEDS_REVIEW_ALERT_THRESHOLD`
 - `HUGO_CONTENT_DIR`
 - `HUGO_COMMAND`
 - `HUGO_BUILD_ARGS`
@@ -224,6 +238,8 @@ OPENAI_API_KEY=your_api_key_here
 - Renderer 只负责到 `built`
 - Scheduler 在发布成功后推进 `published`
 - `RSYNC_DRY_RUN=true` 时不会推进 `published`
+- `QUALITY_MIN_SCORE` 以下但接近阈值的文章会进入 `needs_review`，需人工审核后回到 `generated` 或进入 `failed`
+- 当 `needs_review` 队列数量超过 `NEEDS_REVIEW_ALERT_THRESHOLD` 时，scheduler 会触发告警并写入 `alert_logs`
 
 这样保证了 Build/Publish 分层清晰，符合 `AGENTS.md` 约束。
 
