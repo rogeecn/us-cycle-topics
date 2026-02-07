@@ -43,6 +43,36 @@ export async function sendCriticalAlert(
   logger.error("critical alert emitted", { message, payload });
 }
 
+export async function sendNeedsReviewAlert(
+  webhookUrl: string | undefined,
+  needsReviewCount: number,
+  threshold: number,
+): Promise<void> {
+  const payload = {
+    level: "warning",
+    message: "needs_review queue threshold exceeded",
+    needsReviewCount,
+    threshold,
+    observedAt: new Date().toISOString(),
+  };
+
+  const alertKey = makeKey(
+    `needs-review-${new Date().toISOString().slice(0, 10)}`,
+    payload,
+  );
+
+  if (await hasAlertKey(alertKey)) {
+    return;
+  }
+
+  if (webhookUrl) {
+    await postWebhook(webhookUrl, payload);
+  }
+
+  await appendAlertLog("needs_review_threshold", alertKey, payload);
+  logger.warn("needs_review threshold alert emitted", payload);
+}
+
 export async function emitDailySummary(
   webhookUrl: string | undefined,
   windowStart: Date,
