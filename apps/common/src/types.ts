@@ -1,6 +1,7 @@
 export const CONTENT_STATUSES = [
   "draft",
   "generated",
+  "needs_review",
   "rendered",
   "built",
   "published",
@@ -28,6 +29,10 @@ export interface StoredContent {
   contentHash: string;
   status: ContentStatus;
   lastError: string | null;
+  reviewReason: string | null;
+  reviewNotes: string | null;
+  reviewedBy: string | null;
+  reviewedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   renderedAt: Date | null;
@@ -51,11 +56,17 @@ export interface GeneratedContentInput {
   rawJson: unknown;
   qualityReport: QualityReport;
   contentHash: string;
+  statusAfterQuality: "generated" | "needs_review" | "failed";
+  lastError?: string | null;
+  reviewReason?: string | null;
 }
 
 export interface PipelineRunStats {
   renderedCount: number;
   buildCount: number;
+  publishEligibleCount: number;
+  blockedByQuality: number;
+  needsReviewCount: number;
   publishedCount: number;
   failedCount: number;
 }
@@ -80,17 +91,67 @@ export interface RenderedResult {
 export interface QualityRuleFailure {
   rule: string;
   message: string;
+  weight: number;
+}
+
+export interface QualityDimensionScore {
+  score: number;
+  max: number;
+  notes: string[];
 }
 
 export interface QualityReport {
   passed: boolean;
   checkedAt: string;
+  scoreTotal: number;
+  scoreMax: number;
+  failureCodes: string[];
   failures: QualityRuleFailure[];
+  dimensions: {
+    structure: QualityDimensionScore;
+    specificity: QualityDimensionScore;
+    antiRepetition: QualityDimensionScore;
+    safety: QualityDimensionScore;
+  };
   metrics: {
     contentChars: number;
     descriptionChars: number;
     tagsCount: number;
+    headingCount: number;
+    checklistItems: number;
+    faqQuestions: number;
+    repeatedLineCount: number;
+    repeatedBigramCount: number;
   };
+}
+
+export interface QualityInput {
+  title: string;
+  description: string;
+  tags: string[];
+  content: string;
+  audience: string;
+  intent: string;
+  keyTakeaways: string[];
+  decisionChecklist: string[];
+  commonMistakes: string[];
+  evidenceNotes: string[];
+}
+
+export interface ReviewStats {
+  total: number;
+  draft: number;
+  generated: number;
+  needsReview: number;
+  rendered: number;
+  built: number;
+  published: number;
+  failed: number;
+  averageScoreAll: number | null;
+  averageScoreGenerated: number | null;
+  averageScoreNeedsReview: number | null;
+  averageScoreFailed: number | null;
+  reviewedToday: number;
 }
 
 export interface ProducerRequest {

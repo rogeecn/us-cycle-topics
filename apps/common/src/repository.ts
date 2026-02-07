@@ -4,6 +4,7 @@ import {
   GeneratedContentInput,
   PipelineRunRecord,
   RenderMode,
+  ReviewStats,
   StoredContent,
 } from "./types.js";
 
@@ -27,6 +28,10 @@ function mapRow(row: Record<string, unknown>): StoredContent {
     contentHash: String(row.content_hash),
     status: row.status as StoredContent["status"],
     lastError: row.last_error ? String(row.last_error) : null,
+    reviewReason: row.review_reason ? String(row.review_reason) : null,
+    reviewNotes: row.review_notes ? String(row.review_notes) : null,
+    reviewedBy: row.reviewed_by ? String(row.reviewed_by) : null,
+    reviewedAt: row.reviewed_at ? new Date(String(row.reviewed_at)) : null,
     createdAt: new Date(String(row.created_at)),
     updatedAt: new Date(String(row.updated_at)),
     renderedAt: row.rendered_at ? new Date(String(row.rendered_at)) : null,
@@ -44,12 +49,12 @@ export async function upsertGeneratedContent(
     INSERT INTO seo_articles (
       source_key, topic, city, keyword, title, description, slug, tags, content,
       lastmod, prompt_version, model_version, raw_json, quality_report, content_hash,
-      status, last_error, rendered_at, built_at, published_at
+      status, last_error, review_reason, review_notes, reviewed_by, reviewed_at,
+      rendered_at, built_at, published_at
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,
       $10,$11,$12,$13::jsonb,$14::jsonb,$15,
-      CASE WHEN ($14::jsonb->>'passed')::boolean THEN 'generated' ELSE 'failed' END,
-      CASE WHEN ($14::jsonb->>'passed')::boolean THEN NULL ELSE 'quality validation failed' END,
+      $16,$17,$18,$19,$20,$21,
       NULL,NULL,NULL
     )
     ON CONFLICT (source_key) DO UPDATE SET
@@ -67,14 +72,12 @@ export async function upsertGeneratedContent(
       raw_json = EXCLUDED.raw_json,
       quality_report = EXCLUDED.quality_report,
       content_hash = EXCLUDED.content_hash,
-      status = CASE
-        WHEN (EXCLUDED.quality_report->>'passed')::boolean THEN 'generated'
-        ELSE 'failed'
-      END,
-      last_error = CASE
-        WHEN (EXCLUDED.quality_report->>'passed')::boolean THEN NULL
-        ELSE 'quality validation failed'
-      END,
+      status = EXCLUDED.status,
+      last_error = EXCLUDED.last_error,
+      review_reason = EXCLUDED.review_reason,
+      review_notes = EXCLUDED.review_notes,
+      reviewed_by = EXCLUDED.reviewed_by,
+      reviewed_at = EXCLUDED.reviewed_at,
       rendered_at = NULL,
       built_at = NULL,
       published_at = NULL,
@@ -98,6 +101,12 @@ export async function upsertGeneratedContent(
     JSON.stringify(input.rawJson),
     JSON.stringify(input.qualityReport),
     input.contentHash,
+    input.statusAfterQuality,
+    input.lastError ?? null,
+    input.reviewReason ?? null,
+    null,
+    null,
+    null,
   ];
 
   const result = await pool.query(query, values);
@@ -124,7 +133,7 @@ export async function claimArticlesForRender(
     `;
 
     const claimed = await client.query(query, [batchSize]);
-    if (claimed.rowCount === 0) {
+    if ((claimed.rowCount ?? 0) === 0) {
       return [];
     }
 
@@ -153,6 +162,29 @@ export async function markBuildSuccess(ids: number[]): Promise<void> {
   );
 }
 
+export async function listPublishEligibleBuiltIds(
+  minScore: number,
+  candidateIds: number[],
+): Promise<number[]> {
+  if (candidateIds.length === 0) {
+    return [];
+  }
+
+  const pool = getPool();
+  const result = await pool.query<{ id: string }>(
+    `SELECT id
+     FROM seo_articles
+     WHERE id = ANY($2::bigint[])
+       AND status = 'built'
+       AND (quality_report->>'passed')::boolean = TRUE
+       AND COALESCE((quality_report->>'scoreTotal')::numeric, 0) >= $1
+     ORDER BY updated_at ASC, id ASC`,
+    [minScore, candidateIds],
+  );
+
+  return result.rows.map((row) => Number(row.id));
+}
+
 export async function markPublished(ids: number[]): Promise<void> {
   if (ids.length === 0) {
     return;
@@ -177,6 +209,144 @@ export async function markArticleFailed(
      WHERE id = $1`,
     [id, errorMessage],
   );
+}
+
+export async function countNeedsReview(): Promise<number> {
+  const pool = getPool();
+  const result = await pool.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+     FROM seo_articles
+     WHERE status = 'needs_review'`,
+  );
+
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+export async function listNeedsReview(limit: number): Promise<StoredContent[]> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT *
+     FROM seo_articles
+     WHERE status = 'needs_review'
+     ORDER BY updated_at ASC
+     LIMIT $1`,
+    [limit],
+  );
+  return result.rows.map((row) => mapRow(row));
+}
+
+export async function getReviewStats(): Promise<ReviewStats> {
+  const pool = getPool();
+
+  const statusResult = await pool.query<{
+    status: string;
+    count: string;
+  }>(
+    `SELECT status, COUNT(*)::text AS count
+     FROM seo_articles
+     GROUP BY status`,
+  );
+
+  const scoreResult = await pool.query<{
+    avg_all: string | null;
+    avg_generated: string | null;
+    avg_needs_review: string | null;
+    avg_failed: string | null;
+  }>(
+    `SELECT
+       AVG((quality_report->>'scoreTotal')::numeric)::text AS avg_all,
+       AVG(CASE WHEN status = 'generated' THEN (quality_report->>'scoreTotal')::numeric END)::text AS avg_generated,
+       AVG(CASE WHEN status = 'needs_review' THEN (quality_report->>'scoreTotal')::numeric END)::text AS avg_needs_review,
+       AVG(CASE WHEN status = 'failed' THEN (quality_report->>'scoreTotal')::numeric END)::text AS avg_failed
+     FROM seo_articles`,
+  );
+
+  const reviewedTodayResult = await pool.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+     FROM seo_articles
+     WHERE reviewed_at >= DATE_TRUNC('day', NOW())`,
+  );
+
+  const counts: Record<string, number> = {
+    draft: 0,
+    generated: 0,
+    needs_review: 0,
+    rendered: 0,
+    built: 0,
+    published: 0,
+    failed: 0,
+  };
+
+  for (const row of statusResult.rows) {
+    counts[row.status] = Number(row.count);
+  }
+
+  const scoreRow = scoreResult.rows[0];
+  const toNumber = (value: string | null): number | null => (value ? Number(value) : null);
+
+  const total = Object.values(counts).reduce((acc, value) => acc + value, 0);
+
+  return {
+    total,
+    draft: counts.draft,
+    generated: counts.generated,
+    needsReview: counts.needs_review,
+    rendered: counts.rendered,
+    built: counts.built,
+    published: counts.published,
+    failed: counts.failed,
+    averageScoreAll: toNumber(scoreRow?.avg_all ?? null),
+    averageScoreGenerated: toNumber(scoreRow?.avg_generated ?? null),
+    averageScoreNeedsReview: toNumber(scoreRow?.avg_needs_review ?? null),
+    averageScoreFailed: toNumber(scoreRow?.avg_failed ?? null),
+    reviewedToday: Number(reviewedTodayResult.rows[0]?.count ?? 0),
+  };
+}
+
+export async function approveNeedsReview(
+  id: number,
+  reviewer: string,
+  notes: string | null,
+): Promise<boolean> {
+  const pool = getPool();
+  const result = await pool.query(
+    `UPDATE seo_articles
+     SET status = 'generated',
+         review_reason = 'approved_by_reviewer',
+         review_notes = $3,
+         reviewed_by = $2,
+         reviewed_at = NOW(),
+         last_error = NULL,
+         updated_at = NOW()
+     WHERE id = $1
+       AND status = 'needs_review'`,
+    [id, reviewer, notes],
+  );
+
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function rejectNeedsReview(
+  id: number,
+  reviewer: string,
+  notes: string | null,
+): Promise<boolean> {
+  const pool = getPool();
+  const result = await pool.query(
+    `UPDATE seo_articles
+     SET status = 'failed',
+         review_reason = 'rejected_by_reviewer',
+         review_notes = $3,
+         reviewed_by = $2,
+         reviewed_at = NOW(),
+         last_error = 'manual review rejected',
+         updated_at = NOW()
+     WHERE id = $1
+       AND status = 'needs_review'`,
+    [id, reviewer, notes],
+  );
+
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function acquirePipelineLock(
@@ -219,16 +389,22 @@ export async function finishPipelineRun(
       SET status = $2,
           rendered_count = $3,
           build_count = $4,
-          published_count = $5,
-          failed_count = $6,
-          error_message = $7,
-          ended_at = $8
+          publish_eligible_count = $5,
+          blocked_by_quality = $6,
+          needs_review_count = $7,
+          published_count = $8,
+          failed_count = $9,
+          error_message = $10,
+          ended_at = $11
       WHERE run_id = $1`,
     [
       record.runId,
       record.status,
       record.renderedCount,
       record.buildCount,
+      record.publishEligibleCount,
+      record.blockedByQuality,
+      record.needsReviewCount,
       record.publishedCount,
       record.failedCount,
       record.errorMessage,
