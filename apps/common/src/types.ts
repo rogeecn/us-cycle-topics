@@ -9,6 +9,7 @@ export const CONTENT_STATUSES = [
 ] as const;
 
 export type ContentStatus = (typeof CONTENT_STATUSES)[number];
+export type QualitySeverity = "hard" | "soft";
 
 export interface StoredContent {
   id: number;
@@ -92,6 +93,7 @@ export interface QualityRuleFailure {
   rule: string;
   message: string;
   weight: number;
+  severity: QualitySeverity;
 }
 
 export interface QualityDimensionScore {
@@ -105,6 +107,8 @@ export interface QualityReport {
   checkedAt: string;
   scoreTotal: number;
   scoreMax: number;
+  hardFailureCount: number;
+  softFailureCount: number;
   failureCodes: string[];
   failures: QualityRuleFailure[];
   dimensions: {

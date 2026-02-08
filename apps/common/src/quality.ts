@@ -2,9 +2,17 @@ import {
   QualityInput,
   QualityReport,
   QualityRuleFailure,
+  QualitySeverity,
 } from "./types.js";
 
 const FORBIDDEN_TERMS = ["赌博", "成人", "诈骗", "仇恨"];
+const HARD_FAIL_RULES = new Set([
+  "title-required",
+  "description-required",
+  "content-required",
+  "content-min-length",
+  "forbidden-term",
+]);
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
@@ -63,6 +71,16 @@ function countRepeatedBigrams(content: string): number {
   return repeated;
 }
 
+function pushFailure(
+  failures: QualityRuleFailure[],
+  rule: string,
+  message: string,
+  weight: number,
+): void {
+  const severity: QualitySeverity = HARD_FAIL_RULES.has(rule) ? "hard" : "soft";
+  failures.push({ rule, message, weight, severity });
+}
+
 export function evaluateQuality(input: QualityInput): QualityReport {
   const failures: QualityRuleFailure[] = [];
 
@@ -101,157 +119,137 @@ export function evaluateQuality(input: QualityInput): QualityReport {
   if (input.title.trim().length > 0) {
     dimensions.structure.score += 4;
   } else {
-    failures.push({ rule: "title-required", message: "title is required", weight: 4 });
+    pushFailure(failures, "title-required", "title is required", 4);
   }
 
   if (input.description.trim().length > 0) {
     dimensions.structure.score += 3;
   } else {
-    failures.push({
-      rule: "description-required",
-      message: "description is required",
-      weight: 3,
-    });
+    pushFailure(failures, "description-required", "description is required", 3);
   }
 
   if (input.content.trim().length > 0) {
     dimensions.structure.score += 3;
   } else {
-    failures.push({
-      rule: "content-required",
-      message: "content is required",
-      weight: 3,
-    });
+    pushFailure(failures, "content-required", "content is required", 3);
   }
 
   if (contentChars >= 800) {
     dimensions.structure.score += 5;
   } else {
-    failures.push({
-      rule: "content-min-length",
-      message: "content must be at least 800 characters",
-      weight: 5,
-    });
+    pushFailure(failures, "content-min-length", "content must be at least 800 characters", 5);
   }
 
   if (descriptionChars >= 80 && descriptionChars <= 180) {
     dimensions.structure.score += 3;
   } else {
-    failures.push({
-      rule: "description-range",
-      message: "description must be between 80 and 180 characters",
-      weight: 3,
-    });
+    pushFailure(
+      failures,
+      "description-range",
+      "description must be between 80 and 180 characters",
+      3,
+    );
   }
 
   if (tagsCount >= 3 && tagsCount <= 8) {
     dimensions.structure.score += 3;
   } else {
-    failures.push({
-      rule: "tags-range",
-      message: "tags must be between 3 and 8 items",
-      weight: 3,
-    });
+    pushFailure(failures, "tags-range", "tags must be between 3 and 8 items", 3);
   }
 
   if (headingCount >= 4) {
     dimensions.structure.score += 4;
   } else {
-    failures.push({
-      rule: "heading-count",
-      message: "content should contain at least 4 H2/H3 headings",
-      weight: 4,
-    });
+    pushFailure(
+      failures,
+      "heading-count",
+      "content should contain at least 4 H2/H3 headings",
+      4,
+    );
   }
 
   if (input.audience.trim().length >= 10) {
     dimensions.specificity.score += 5;
   } else {
-    failures.push({
-      rule: "audience-specificity",
-      message: "audience field is too generic",
-      weight: 5,
-    });
+    pushFailure(failures, "audience-specificity", "audience field is too generic", 5);
   }
 
   if (input.intent.trim().length >= 10) {
     dimensions.specificity.score += 5;
   } else {
-    failures.push({
-      rule: "intent-specificity",
-      message: "intent field is too generic",
-      weight: 5,
-    });
+    pushFailure(failures, "intent-specificity", "intent field is too generic", 5);
   }
 
   if (input.keyTakeaways.length >= 3 && uniqueCount(input.keyTakeaways) === input.keyTakeaways.length) {
     dimensions.specificity.score += 5;
   } else {
-    failures.push({
-      rule: "key-takeaways-quality",
-      message: "keyTakeaways must have at least 3 unique entries",
-      weight: 5,
-    });
+    pushFailure(
+      failures,
+      "key-takeaways-quality",
+      "keyTakeaways must have at least 3 unique entries",
+      5,
+    );
   }
 
   if (checklistItems >= 4 && uniqueCount(input.decisionChecklist) >= 4) {
     dimensions.specificity.score += 5;
   } else {
-    failures.push({
-      rule: "decision-checklist-quality",
-      message: "decisionChecklist must include at least 4 actionable unique items",
-      weight: 5,
-    });
+    pushFailure(
+      failures,
+      "decision-checklist-quality",
+      "decisionChecklist must include at least 4 actionable unique items",
+      5,
+    );
   }
 
   if (input.commonMistakes.length >= 3 && uniqueCount(input.commonMistakes) >= 3) {
     dimensions.specificity.score += 5;
   } else {
-    failures.push({
-      rule: "common-mistakes-quality",
-      message: "commonMistakes must include at least 3 distinct mistakes",
-      weight: 5,
-    });
+    pushFailure(
+      failures,
+      "common-mistakes-quality",
+      "commonMistakes must include at least 3 distinct mistakes",
+      5,
+    );
   }
 
   if (repeatedLineCount <= 1) {
     dimensions.antiRepetition.score += 10;
   } else {
-    failures.push({
-      rule: "repeated-lines",
-      message: "content contains repeated long lines",
-      weight: 10,
-    });
+    pushFailure(failures, "repeated-lines", "content contains repeated long lines", 10);
   }
 
   if (repeatedBigramCount <= 6) {
     dimensions.antiRepetition.score += 8;
   } else {
-    failures.push({
-      rule: "repeated-bigrams",
-      message: "content has excessive repeated bigrams",
-      weight: 8,
-    });
+    pushFailure(
+      failures,
+      "repeated-bigrams",
+      "content has excessive repeated bigrams",
+      8,
+    );
   }
 
   if (faqQuestions >= 2) {
     dimensions.antiRepetition.score += 4;
   } else {
-    failures.push({
-      rule: "faq-presence",
-      message: "FAQ section should contain at least 2 explicit questions",
-      weight: 4,
-    });
+    pushFailure(
+      failures,
+      "faq-presence",
+      "FAQ section should contain at least 2 explicit questions",
+      4,
+    );
   }
 
   if (input.evidenceNotes.length >= 2 && uniqueCount(input.evidenceNotes) >= 2) {
     dimensions.antiRepetition.score += 3;
   } else {
-    failures.push({
-      rule: "evidence-notes",
-      message: "evidenceNotes should contain at least 2 useful notes",
-      weight: 3,
-    });
+    pushFailure(
+      failures,
+      "evidence-notes",
+      "evidenceNotes should contain at least 2 useful notes",
+      3,
+    );
   }
 
   const lowerContent = input.content.toLowerCase();
@@ -261,11 +259,7 @@ export function evaluateQuality(input: QualityInput): QualityReport {
     const lowered = term.toLowerCase();
     if (lowerContent.includes(lowered) || lowerDescription.includes(lowered)) {
       forbiddenHits += 1;
-      failures.push({
-        rule: "forbidden-term",
-        message: `forbidden term detected: ${term}`,
-        weight: 25,
-      });
+      pushFailure(failures, "forbidden-term", `forbidden term detected: ${term}`, 25);
     }
   }
 
@@ -289,11 +283,16 @@ export function evaluateQuality(input: QualityInput): QualityReport {
       dimensions.safety.score,
   );
 
+  const hardFailureCount = failures.filter((item) => item.severity === "hard").length;
+  const softFailureCount = failures.filter((item) => item.severity === "soft").length;
+
   return {
-    passed: failures.length === 0,
+    passed: hardFailureCount === 0,
     checkedAt: new Date().toISOString(),
     scoreTotal,
     scoreMax: 100,
+    hardFailureCount,
+    softFailureCount,
     failureCodes: failures.map((failure) => failure.rule),
     failures,
     dimensions,
