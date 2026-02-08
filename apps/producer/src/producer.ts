@@ -11,22 +11,22 @@ import { logger } from "../../common/src/logger.js";
 import { evaluateQuality } from "../../common/src/quality.js";
 import { sha256 } from "../../common/src/hash.js";
 import { upsertGeneratedContent } from "../../common/src/repository.js";
-import { ProducerRequest } from "../../common/src/types.js";
+import { ProducerRequest, QualityReport } from "../../common/src/types.js";
 
 function buildSourceKey(request: ProducerRequest): string {
   return `${request.city}::${request.topic}::${request.keyword}`.toLowerCase();
 }
 
 function resolvePostQualityStatus(
-  passed: boolean,
-  scoreTotal: number,
+  qualityReport: QualityReport,
   minScore: number,
+  softReviewThreshold: number,
 ): {
   statusAfterQuality: "generated" | "needs_review" | "failed";
   lastError: string | null;
   reviewReason: string | null;
 } {
-  if (passed && scoreTotal >= minScore) {
+  if (qualityReport.hardFailureCount === 0 && qualityReport.scoreTotal >= minScore) {
     return {
       statusAfterQuality: "generated",
       lastError: null,
@@ -34,7 +34,10 @@ function resolvePostQualityStatus(
     };
   }
 
-  if (scoreTotal >= minScore * 0.75) {
+  if (
+    qualityReport.hardFailureCount === 0 &&
+    qualityReport.scoreTotal >= softReviewThreshold
+  ) {
     return {
       statusAfterQuality: "needs_review",
       lastError: "quality requires manual review",
@@ -45,8 +48,62 @@ function resolvePostQualityStatus(
   return {
     statusAfterQuality: "failed",
     lastError: "quality validation failed",
-    reviewReason: "quality_hard_fail",
+    reviewReason:
+      qualityReport.hardFailureCount > 0 ? "quality_hard_fail" : "quality_soft_fail_low_score",
   };
+}
+
+function evaluateArticle(article: ArticleOutput): QualityReport {
+  return evaluateQuality({
+    title: article.title,
+    description: article.description,
+    tags: article.tags,
+    content: article.content,
+    audience: article.audience,
+    intent: article.intent,
+    keyTakeaways: article.keyTakeaways,
+    decisionChecklist: article.decisionChecklist,
+    commonMistakes: article.commonMistakes,
+    evidenceNotes: article.evidenceNotes,
+  });
+}
+
+async function reviseArticleWithFailures(
+  article: ArticleOutput,
+  qualityReport: QualityReport,
+  language: string,
+): Promise<ArticleOutput> {
+  const env = getEnv();
+
+  const revisePrompt = ai.prompt<z.ZodTypeAny, typeof ArticleOutputSchema, z.ZodTypeAny>(
+    "seo-revise",
+  );
+
+  const { output } = await revisePrompt(
+    {
+      language,
+      nowIso: new Date().toISOString(),
+      originalArticleJson: JSON.stringify(article),
+      failureCodesJson: JSON.stringify(qualityReport.failureCodes),
+      failureMessagesJson: JSON.stringify(qualityReport.failures.map((item) => item.message)),
+      qualitySummaryJson: JSON.stringify({
+        scoreTotal: qualityReport.scoreTotal,
+        hardFailureCount: qualityReport.hardFailureCount,
+        softFailureCount: qualityReport.softFailureCount,
+      }),
+    },
+    {
+      output: {
+        schema: ArticleOutputSchema,
+      },
+    },
+  );
+
+  if (!output) {
+    throw new Error("Genkit returned empty revised article output");
+  }
+
+  return ArticleOutputSchema.parse(output);
 }
 
 export async function produceArticle(request: ProducerRequest): Promise<void> {
@@ -95,25 +152,37 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
     throw new Error("Genkit returned empty article output");
   }
 
-  const article: ArticleOutput = ArticleOutputSchema.parse(articleOutput);
+  let article: ArticleOutput = ArticleOutputSchema.parse(articleOutput);
+  let qualityReport = evaluateArticle(article);
 
-  const qualityReport = evaluateQuality({
-    title: article.title,
-    description: article.description,
-    tags: article.tags,
-    content: article.content,
-    audience: article.audience,
-    intent: article.intent,
-    keyTakeaways: article.keyTakeaways,
-    decisionChecklist: article.decisionChecklist,
-    commonMistakes: article.commonMistakes,
-    evidenceNotes: article.evidenceNotes,
-  });
+  for (let attempt = 1; attempt <= env.PRODUCER_MAX_REVISIONS; attempt += 1) {
+    if (qualityReport.hardFailureCount === 0 && qualityReport.scoreTotal >= env.QUALITY_MIN_SCORE) {
+      break;
+    }
+
+    if (qualityReport.hardFailureCount > 0) {
+      break;
+    }
+
+    article = await reviseArticleWithFailures(
+      article,
+      qualityReport,
+      commonInput.language,
+    );
+    qualityReport = evaluateArticle(article);
+
+    logger.info("producer auto-revision attempt completed", {
+      attempt,
+      scoreTotal: qualityReport.scoreTotal,
+      hardFailureCount: qualityReport.hardFailureCount,
+      softFailureCount: qualityReport.softFailureCount,
+    });
+  }
 
   const qualityDecision = resolvePostQualityStatus(
-    qualityReport.passed,
-    qualityReport.scoreTotal,
+    qualityReport,
     env.QUALITY_MIN_SCORE,
+    env.QUALITY_SOFT_REVIEW_THRESHOLD,
   );
 
   const contentHash = sha256(`${article.title}\n${article.description}\n${article.content}`);
@@ -134,6 +203,7 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
     rawJson: {
       outline,
       article,
+      qualityReport,
     },
     qualityReport,
     contentHash,
@@ -149,6 +219,8 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
     status: record.status,
     qualityPassed: record.qualityReport.passed,
     qualityScore: record.qualityReport.scoreTotal,
+    hardFailureCount: record.qualityReport.hardFailureCount,
+    softFailureCount: record.qualityReport.softFailureCount,
     reviewReason: record.reviewReason,
   });
 }
