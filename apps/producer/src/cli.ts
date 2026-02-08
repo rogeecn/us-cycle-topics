@@ -1,4 +1,8 @@
+import { z } from "genkit";
+import { ai } from "./genkit.js";
+import { AutoInputSchema } from "./schema.js";
 import { produceArticle } from "./producer.js";
+import { getEnv } from "../../common/src/env.js";
 import { logger } from "../../common/src/logger.js";
 
 function getArg(name: string): string | undefined {
@@ -9,17 +13,78 @@ function getArg(name: string): string | undefined {
   return process.argv[index + 1];
 }
 
-async function main(): Promise<void> {
-  const topic = getArg("topic");
-  const city = getArg("city");
-  const keyword = getArg("keyword");
+async function resolveInput(): Promise<{
+  topic: string;
+  city: string;
+  keyword: string;
+  language?: string;
+  source: "manual" | "ai-generated";
+}> {
+  const env = getEnv();
+
+  const topicArg = getArg("topic");
+  const cityArg = getArg("city");
+  const keywordArg = getArg("keyword");
   const language = getArg("language");
 
-  if (!topic || !city || !keyword) {
-    throw new Error("missing required args: --topic --city --keyword");
+  if (topicArg && cityArg && keywordArg) {
+    return {
+      topic: topicArg,
+      city: cityArg,
+      keyword: keywordArg,
+      language,
+      source: "manual",
+    };
   }
 
-  await produceArticle({ topic, city, keyword, language });
+  const autoPrompt = ai.prompt<z.ZodTypeAny, typeof AutoInputSchema, z.ZodTypeAny>(
+    env.PRODUCER_AUTO_INPUT_PROMPT_NAME,
+  );
+
+  const { output } = await autoPrompt(
+    {
+      language: language ?? "en",
+      nowIso: new Date().toISOString(),
+      regionHint: "US",
+    },
+    {
+      output: {
+        schema: AutoInputSchema,
+      },
+    },
+  );
+
+  if (!output) {
+    throw new Error("Genkit returned empty auto-input output");
+  }
+
+  const auto = AutoInputSchema.parse(output);
+
+  return {
+    topic: topicArg ?? auto.topic,
+    city: cityArg ?? auto.city,
+    keyword: keywordArg ?? auto.keyword,
+    language,
+    source: "ai-generated",
+  };
+}
+
+async function main(): Promise<void> {
+  const resolved = await resolveInput();
+
+  logger.info("producer input resolved", {
+    topic: resolved.topic,
+    city: resolved.city,
+    keyword: resolved.keyword,
+    source: resolved.source,
+  });
+
+  await produceArticle({
+    topic: resolved.topic,
+    city: resolved.city,
+    keyword: resolved.keyword,
+    language: resolved.language,
+  });
 }
 
 main().catch((error) => {

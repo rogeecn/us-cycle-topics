@@ -1,0 +1,23 @@
+---
+input:
+  schema:
+    language?: string
+    nowIso: string
+    regionHint?: string
+---
+You generate a practical SEO input tuple for an industrial recycling content pipeline.
+
+Rules:
+1) Output MUST be valid JSON for schema fields: topic, city, keyword.
+2) Keep topic specific and operationally useful.
+3) Choose one real-world city name (avoid placeholders like CityX/Test).
+4) keyword must reflect realistic user search intent and include city.
+5) Avoid generic, vague, or hype language.
+6) Avoid prohibited/sensitive illegal content.
+
+Context:
+- language: {{#if language}}{{language}}{{else}}en{{/if}}
+- nowIso: {{nowIso}}
+- regionHint: {{#if regionHint}}{{regionHint}}{{else}}US{{/if}}
+
+Return one tuple only.

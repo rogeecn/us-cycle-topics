@@ -1,5 +1,11 @@
 import { z } from "genkit";
 
+export const AutoInputSchema = z.object({
+  topic: z.string().min(8).max(120),
+  city: z.string().min(2).max(80),
+  keyword: z.string().min(8).max(160),
+});
+
 export const ArticleOutlineSchema = z.object({
   audience: z.string().min(10),
   intent: z.string().min(10),
