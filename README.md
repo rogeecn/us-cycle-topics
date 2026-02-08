@@ -208,8 +208,7 @@ SMOKE_SEED_COUNT=5 npm run seed:sample
 以 `.env.example` 为准，核心项如下：
 
 - `DATABASE_URL`
-- `GENKIT_MODEL`
-- `GENKIT_BASEURL`（可选，用于 OpenAI-compatible base URL；启用后默认 provider 名为 `compat`）
+- `GENKIT_BASEURL`（可选，用于 OpenAI-compatible base URL；启用后可在 dotPrompt 中使用 `compat/*` 模型）
 - `GENKIT_PROMPT_VERSION`
 - `PRODUCER_AUTO_INPUT_PROMPT_NAME`
 - `PRODUCER_OUTLINE_PROMPT_NAME`
@@ -234,26 +233,46 @@ SMOKE_SEED_COUNT=5 npm run seed:sample
 - `ALERT_WEBHOOK_URL`
 
 模型路由规则：
-- `GENKIT_MODEL` 必须显式包含 provider 前缀（例如 `googleai/gemini-2.5-flash`、`compat/gpt-4o-mini`）。
-- Genkit 会按模型名前缀路由到对应 provider。
+- 模型选择由各个 dotPrompt 文件中的 `model:` 字段决定（支持不同 prompt 使用不同模型）。
+- Genkit 会按模型名前缀路由到对应 provider（例如 `googleai/*`、`compat/*`）。
 - 当设置 `GENKIT_BASEURL` 时，会额外注册 `compat` provider（`@genkit-ai/compat-oai`）。
-- 若未设置 `GENKIT_BASEURL`，则仅注册 `googleai` provider。
+- 若未设置 `GENKIT_BASEURL`，则只能使用已注册的 provider 模型。
 
 ### 配置模板（可直接复制）
 
 #### Google GenAI（默认）
 
 ```env
-GENKIT_MODEL=googleai/gemini-2.5-flash
 GENKIT_BASEURL=
+```
+
+并在对应 prompt 中声明模型，例如：
+
+```yaml
+---
+model: googleai/gemini-2.5-flash
+input:
+  schema:
+    ...
+---
 ```
 
 #### OpenAI-compatible（自定义 baseURL）
 
 ```env
 GENKIT_BASEURL=https://your-openai-compatible-endpoint/v1
-GENKIT_MODEL=compat/gpt-4o-mini
 OPENAI_API_KEY=your_api_key_here
+```
+
+并在对应 prompt 中声明模型，例如：
+
+```yaml
+---
+model: compat/gpt-4o-mini
+input:
+  schema:
+    ...
+---
 ```
 
 ---
