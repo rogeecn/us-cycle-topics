@@ -287,6 +287,7 @@ input:
   - 无 hard failure 且 `score >= QUALITY_MIN_SCORE` 直接 `generated`
   - 无 hard failure 但 `score` 位于 `QUALITY_SOFT_REVIEW_THRESHOLD ~ QUALITY_MIN_SCORE` 进入 `needs_review`
   - `producer` 会先进行最多 `PRODUCER_MAX_REVISIONS` 次自动修订（仅 soft failures 场景）再决定状态
+  - 若检测到与历史内容 `content_hash` 完全重复，会强制进入 `needs_review`（`possible_duplicate_content`）
 - 当 `needs_review` 队列数量超过 `NEEDS_REVIEW_ALERT_THRESHOLD` 时，scheduler 会触发告警并写入 `alert_logs`
 
 这样保证了 Build/Publish 分层清晰，符合 `AGENTS.md` 约束。
