@@ -1,4 +1,5 @@
 ---
+model: googleai/gemini-2.5-flash
 input:
   schema:
     topic: string
