@@ -10,7 +10,10 @@ import { getEnv } from "../../common/src/env.js";
 import { logger } from "../../common/src/logger.js";
 import { evaluateQuality } from "../../common/src/quality.js";
 import { sha256 } from "../../common/src/hash.js";
-import { upsertGeneratedContent } from "../../common/src/repository.js";
+import {
+  findByContentHash,
+  upsertGeneratedContent,
+} from "../../common/src/repository.js";
 import { ProducerRequest, QualityReport } from "../../common/src/types.js";
 
 function buildSourceKey(request: ProducerRequest): string {
@@ -186,6 +189,55 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
   );
 
   const contentHash = sha256(`${article.title}\n${article.description}\n${article.content}`);
+
+  const duplicate = await findByContentHash(contentHash);
+  if (duplicate && duplicate.sourceKey !== buildSourceKey(request)) {
+    logger.warn("duplicate content hash detected, routed to needs_review", {
+      duplicateId: duplicate.id,
+      duplicateSourceKey: duplicate.sourceKey,
+      currentSourceKey: buildSourceKey(request),
+      hash: contentHash,
+    });
+
+    const duplicateRecord = await upsertGeneratedContent({
+      sourceKey: buildSourceKey(request),
+      topic: request.topic,
+      city: request.city,
+      keyword: request.keyword,
+      title: article.title,
+      description: article.description,
+      slug: article.slug,
+      tags: article.tags,
+      content: article.content,
+      lastmod: new Date(article.lastmod),
+      promptVersion: env.GENKIT_PROMPT_VERSION,
+      modelVersion: "prompt-managed",
+      rawJson: {
+        outline,
+        article,
+        qualityReport,
+      },
+      qualityReport,
+      contentHash,
+      statusAfterQuality: "needs_review",
+      lastError: "duplicate content hash detected",
+      reviewReason: "possible_duplicate_content",
+    });
+
+    logger.info("producer stored article", {
+      id: duplicateRecord.id,
+      sourceKey: duplicateRecord.sourceKey,
+      slug: duplicateRecord.slug,
+      status: duplicateRecord.status,
+      qualityPassed: duplicateRecord.qualityReport.passed,
+      qualityScore: duplicateRecord.qualityReport.scoreTotal,
+      hardFailureCount: duplicateRecord.qualityReport.hardFailureCount,
+      softFailureCount: duplicateRecord.qualityReport.softFailureCount,
+      reviewReason: duplicateRecord.reviewReason,
+    });
+
+    return;
+  }
 
   const record = await upsertGeneratedContent({
     sourceKey: buildSourceKey(request),
