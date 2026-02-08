@@ -102,6 +102,27 @@ npm run bootstrap
 
 ---
 
+## 4.1 快速配置（推荐）
+
+项目已在 `.env.example` 提供两套可直接复制的模板：
+
+- **最小可运行配置（本地联调）**：
+  - 目标：最快跑通生成与构建链路
+  - 特点：`PUBLISH_METHOD=none`、`RSYNC_DRY_RUN=true`
+
+- **生产推荐配置（VPS/远程发布）**：
+  - 目标：稳定定时生产 + 真实发布
+  - 特点：更严格质量阈值、更高重试上限、开启 rsync 发布
+
+另外提供 **OpenAI-compatible** 配置片段（`GENKIT_BASEURL + compat/* model`）。
+
+建议流程：
+1. 先用最小模板跑通。
+2. 再切换到生产模板并做灰度验证。
+3. 最后关闭 `RSYNC_DRY_RUN` 执行真实发布。
+
+---
+
 ## 5. 常用命令
 
 ### 数据库
@@ -194,6 +215,8 @@ SMOKE_SEED_COUNT=5 npm run seed:sample
 - `PRODUCER_OUTLINE_PROMPT_NAME`
 - `PRODUCER_PROMPT_NAME`
 - `QUALITY_MIN_SCORE`
+- `QUALITY_SOFT_REVIEW_THRESHOLD`
+- `PRODUCER_MAX_REVISIONS`
 - `NEEDS_REVIEW_ALERT_THRESHOLD`
 - `HUGO_CONTENT_DIR`
 - `HUGO_COMMAND`
@@ -240,7 +263,11 @@ OPENAI_API_KEY=your_api_key_here
 - Renderer 只负责到 `built`
 - Scheduler 在发布成功后推进 `published`
 - `RSYNC_DRY_RUN=true` 时不会推进 `published`
-- `QUALITY_MIN_SCORE` 以下但接近阈值的文章会进入 `needs_review`，需人工审核后回到 `generated` 或进入 `failed`
+- 质量分层策略：
+  - `hard failure` 存在时直接 `failed`
+  - 无 hard failure 且 `score >= QUALITY_MIN_SCORE` 直接 `generated`
+  - 无 hard failure 但 `score` 位于 `QUALITY_SOFT_REVIEW_THRESHOLD ~ QUALITY_MIN_SCORE` 进入 `needs_review`
+  - `producer` 会先进行最多 `PRODUCER_MAX_REVISIONS` 次自动修订（仅 soft failures 场景）再决定状态
 - 当 `needs_review` 队列数量超过 `NEEDS_REVIEW_ALERT_THRESHOLD` 时，scheduler 会触发告警并写入 `alert_logs`
 
 这样保证了 Build/Publish 分层清晰，符合 `AGENTS.md` 约束。
