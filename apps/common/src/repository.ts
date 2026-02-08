@@ -40,6 +40,26 @@ function mapRow(row: Record<string, unknown>): StoredContent {
   };
 }
 
+export async function findByContentHash(
+  contentHash: string,
+): Promise<StoredContent | null> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT *
+     FROM seo_articles
+     WHERE content_hash = $1
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [contentHash],
+  );
+
+  if ((result.rowCount ?? 0) === 0) {
+    return null;
+  }
+
+  return mapRow(result.rows[0]);
+}
+
 export async function upsertGeneratedContent(
   input: GeneratedContentInput,
 ): Promise<StoredContent> {

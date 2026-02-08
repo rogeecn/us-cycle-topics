@@ -5,13 +5,23 @@ import {
   QualitySeverity,
 } from "./types.js";
 
-const FORBIDDEN_TERMS = ["赌博", "成人", "诈骗", "仇恨"];
+const FORBIDDEN_TERMS = [
+  "赌博",
+  "成人",
+  "诈骗",
+  "仇恨",
+  "guaranteed return",
+  "risk-free profit",
+  "instant ranking",
+  "undetectable seo",
+];
 const HARD_FAIL_RULES = new Set([
   "title-required",
   "description-required",
   "content-required",
   "content-min-length",
   "forbidden-term",
+  "fabricated-local-specifics",
 ]);
 
 function round(value: number): number {
@@ -25,6 +35,26 @@ function uniqueCount(values: string[]): number {
 function countMatches(input: string, regex: RegExp): number {
   const matches = input.match(regex);
   return matches ? matches.length : 0;
+}
+
+function hasVerificationEvidenceFormat(note: string): boolean {
+  return /^SourceType:\s*[^|]+\|\s*Verification:\s*.+$/i.test(note.trim());
+}
+
+function startsWithGenericTitlePrefix(title: string): boolean {
+  return /^(industrial|ultimate guide|complete guide|comprehensive guide|everything you need to know)\b/i.test(
+    title.trim(),
+  );
+}
+
+function includesLikelyFabricatedLocalSpecifics(content: string): boolean {
+  const hasPhonePattern = /(\+?\d[\d\s\-()]{6,}\d)/.test(content);
+  const hasAddressPattern = /\b\d{1,5}\s+[A-Za-z0-9\s]+\b(street|st\.|avenue|ave\.|road|rd\.|boulevard|blvd\.|lane|ln\.)\b/i.test(
+    content,
+  );
+  const hasGuaranteedPattern = /\b(guaranteed|100% guaranteed|risk-free)\b/i.test(content);
+
+  return hasPhonePattern || hasAddressPattern || hasGuaranteedPattern;
 }
 
 function countRepeatedLines(content: string): number {
@@ -120,6 +150,19 @@ export function evaluateQuality(input: QualityInput): QualityReport {
     dimensions.structure.score += 4;
   } else {
     pushFailure(failures, "title-required", "title is required", 4);
+  }
+
+  if (startsWithGenericTitlePrefix(input.title)) {
+    pushFailure(
+      failures,
+      "title-prefix-overuse",
+      "title starts with an overused generic prefix; use a specific user-intent phrasing",
+      5,
+    );
+  } else {
+    dimensions.specificity.score = round(
+      Math.min(dimensions.specificity.score + 2, dimensions.specificity.max),
+    );
   }
 
   if (input.description.trim().length > 0) {
@@ -241,14 +284,45 @@ export function evaluateQuality(input: QualityInput): QualityReport {
     );
   }
 
-  if (input.evidenceNotes.length >= 2 && uniqueCount(input.evidenceNotes) >= 2) {
+  const evidenceFormatValid =
+    input.evidenceNotes.length >= 2 &&
+    uniqueCount(input.evidenceNotes) >= 2 &&
+    input.evidenceNotes.every((note) => hasVerificationEvidenceFormat(note));
+
+  if (evidenceFormatValid) {
     dimensions.antiRepetition.score += 3;
   } else {
     pushFailure(
       failures,
       "evidence-notes",
-      "evidenceNotes should contain at least 2 useful notes",
+      "evidenceNotes should include at least 2 unique entries using format: SourceType: <type> | Verification: <how to verify now>",
       3,
+    );
+  }
+
+  const verificationSectionCount = countMatches(
+    input.content,
+    /^##\s+How to Verify in .* Today\s*$/gim,
+  );
+  if (verificationSectionCount >= 1 && checklistItems >= 3) {
+    dimensions.specificity.score = round(
+      Math.min(dimensions.specificity.score + 2, dimensions.specificity.max),
+    );
+  } else {
+    pushFailure(
+      failures,
+      "verification-section-missing",
+      "content should include section '## How to Verify in <city> Today' with practical steps",
+      4,
+    );
+  }
+
+  if (includesLikelyFabricatedLocalSpecifics(input.content)) {
+    pushFailure(
+      failures,
+      "fabricated-local-specifics",
+      "content appears to include unverifiable local specifics (address/phone/guaranteed claims)",
+      12,
     );
   }
 
