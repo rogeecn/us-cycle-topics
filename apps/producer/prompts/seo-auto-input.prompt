@@ -6,7 +6,7 @@ input:
     nowIso: string
     regionHint?: string
 ---
-You generate a practical SEO input tuple for an industrial recycling content pipeline.
+You generate a practical SEO input tuple for a local operations and recycling content pipeline.
 
 Rules:
 1) Output MUST be valid JSON for schema fields: topic, city, keyword.

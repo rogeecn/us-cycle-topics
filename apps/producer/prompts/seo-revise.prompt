@@ -19,8 +19,12 @@ Rules:
 3) Keep article factual tone and practical style.
 4) Preserve the core topic and city intent; do not drift scope.
 5) Ensure markdown body has clear H2/H3 structure and FAQ questions.
-6) Keep slug format stable and lowercase kebab-case.
-7) lastmod must use nowIso.
+6) Title must NOT start with generic fixed prefixes like "Industrial", "Ultimate Guide", "Complete Guide", "Comprehensive Guide", or "Everything You Need to Know".
+7) Ensure content includes a section titled "## How to Verify in <city> Today" with at least 3 practical verification steps.
+8) Do NOT invent business names, phone numbers, street addresses, guaranteed outcomes, or exact local prices unless clearly marked as examples.
+9) evidenceNotes MUST contain at least 2 items, each in format: "SourceType: <type> | Verification: <how to verify now>".
+10) Keep slug format stable and lowercase kebab-case.
+11) lastmod must use nowIso.
 
 Context:
 - language: {{#if language}}{{language}}{{else}}en{{/if}}
