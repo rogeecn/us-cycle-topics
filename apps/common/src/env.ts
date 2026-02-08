@@ -42,6 +42,8 @@ const EnvSchema = z.object({
   PRODUCER_OUTLINE_PROMPT_NAME: z.string().default("seo-outline"),
   PRODUCER_PROMPT_NAME: z.string().default("seo-article"),
   QUALITY_MIN_SCORE: z.coerce.number().min(0).max(100).default(70),
+  QUALITY_SOFT_REVIEW_THRESHOLD: z.coerce.number().min(0).max(100).default(60),
+  PRODUCER_MAX_REVISIONS: z.coerce.number().int().min(0).max(5).default(2),
   NEEDS_REVIEW_ALERT_THRESHOLD: z.coerce.number().int().min(1).default(20),
   HUGO_CONTENT_DIR: z.string().default("./hugo-site/content/posts"),
   HUGO_COMMAND: z.string().default("hugo"),
