@@ -38,6 +38,7 @@ const EnvSchema = z.object({
     z.string().url().optional(),
   ),
   GENKIT_PROMPT_VERSION: z.string().default("v1"),
+  PRODUCER_AUTO_INPUT_PROMPT_NAME: z.string().default("seo-auto-input"),
   PRODUCER_OUTLINE_PROMPT_NAME: z.string().default("seo-outline"),
   PRODUCER_PROMPT_NAME: z.string().default("seo-article"),
   QUALITY_MIN_SCORE: z.coerce.number().min(0).max(100).default(70),

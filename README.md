@@ -118,6 +118,7 @@ npm run pg:down
 ### 生产/渲染/调度
 
 ```bash
+npm run producer # 默认由 AI 自动生成 topic/city/keyword
 npm run producer -- --topic "Scrap Forklift" --city "Houston" --keyword "forklift scrap value houston"
 npm run eval:run -- --dataset=scripts/eval-dataset.json
 npm run renderer -- --mode=incremental
@@ -189,6 +190,7 @@ SMOKE_SEED_COUNT=5 npm run seed:sample
 - `GENKIT_MODEL`
 - `GENKIT_BASEURL`（可选，用于 OpenAI-compatible base URL；启用后默认 provider 名为 `compat`）
 - `GENKIT_PROMPT_VERSION`
+- `PRODUCER_AUTO_INPUT_PROMPT_NAME`
 - `PRODUCER_OUTLINE_PROMPT_NAME`
 - `PRODUCER_PROMPT_NAME`
 - `QUALITY_MIN_SCORE`
