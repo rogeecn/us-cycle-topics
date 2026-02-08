@@ -199,7 +199,7 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
     content: article.content,
     lastmod: new Date(article.lastmod),
     promptVersion: env.GENKIT_PROMPT_VERSION,
-    modelVersion: env.GENKIT_MODEL,
+    modelVersion: "prompt-managed",
     rawJson: {
       outline,
       article,

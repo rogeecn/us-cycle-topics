@@ -27,7 +27,6 @@ function booleanFlag(defaultValue: boolean) {
 
 const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
-  GENKIT_MODEL: z.string().default("googleai/gemini-2.5-flash"),
   GENKIT_BASEURL: z.preprocess(
     (value) => {
       if (typeof value === "string" && value.trim() === "") {
