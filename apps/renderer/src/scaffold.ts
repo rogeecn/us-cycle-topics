@@ -4,11 +4,62 @@ import { getEnv } from "../../common/src/env.js";
 
 const DEFAULT_CONFIG = `baseURL = "https://example.com/"
 languageCode = "en-us"
-title = "US Cycle Topics"
+title = "LocalProof Guides"
+theme = "mainroad"
+
+[taxonomies]
+  category = "categories"
+  tag = "tags"
+
+[Params]
+  description = "People-first local operations and recycling guides with practical verification steps."
+  opengraph = true
+  schema = true
+  twitter_cards = true
+  readmore = true
+  authorbox = true
+  pager = true
+  toc = true
+  post_meta = ["date", "categories", "tags"]
+  mainSections = ["posts", "post", "docs"]
+  dateformat = "2006-01-02"
+
+[Params.logo]
+  title = "LocalProof Guides"
+  subtitle = "Verify before you act"
+
+[Params.sidebar]
+  home = "right"
+  list = "right"
+  single = "right"
+  widgets = ["search", "recent", "categories", "taglist"]
+
+[Params.widgets]
+  recent_num = 8
+  categories_counter = true
+  tags_counter = true
+
+[markup]
+  [markup.tableOfContents]
+    startLevel = 2
+    endLevel = 3
+    ordered = false
+
+[services.disqus]
+  shortname = ""
+
+[services.googleAnalytics]
+  ID = ""
 `;
 
 const DEFAULT_HOME = `---
 title: "Home"
+---
+`;
+
+const DEFAULT_POSTS_INDEX = `---
+title: "Posts"
+description: "Latest practical local guides"
 ---
 `;
 
@@ -38,4 +89,16 @@ export async function scaffoldHugoSite(): Promise<void> {
 
   const homePath = path.join(workdir, "content", "_index.md");
   await ensureFile(homePath, DEFAULT_HOME);
+
+  const postsIndexPath = path.join(workdir, "content", "posts", "_index.md");
+  await ensureFile(postsIndexPath, DEFAULT_POSTS_INDEX);
+
+  const themePath = path.join(workdir, "themes", env.HUGO_THEME);
+  try {
+    await access(themePath, constants.F_OK);
+  } catch {
+    throw new Error(
+      `Hugo theme '${env.HUGO_THEME}' not found at ${themePath}. Please install it first (for Mainroad: git clone https://github.com/Vimux/Mainroad themes/mainroad).`,
+    );
+  }
 }
