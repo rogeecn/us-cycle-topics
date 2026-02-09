@@ -15,7 +15,7 @@ npm run migrate
 echo "[smoke] seeding deterministic sample content"
 npm run seed:sample -- --count=3
 
-echo "[smoke] running incremental pipeline with rsync dry-run"
-RSYNC_DRY_RUN=true npm run pipeline -- --mode=incremental
+echo "[smoke] running incremental pipeline"
+npm run pipeline -- --mode=incremental
 
 echo "[smoke] completed"

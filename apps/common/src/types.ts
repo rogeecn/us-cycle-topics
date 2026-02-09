@@ -63,12 +63,8 @@ export interface GeneratedContentInput {
 }
 
 export interface PipelineRunStats {
-  renderedCount: number;
-  buildCount: number;
-  publishEligibleCount: number;
-  blockedByQuality: number;
-  needsReviewCount: number;
   publishedCount: number;
+  needsReviewCount: number;
   failedCount: number;
 }
 

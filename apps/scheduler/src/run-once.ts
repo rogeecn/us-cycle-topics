@@ -7,6 +7,7 @@ function parseMode(): "incremental" | "full" {
   if (!flag) {
     return "incremental";
   }
+
   const value = flag.split("=")[1];
   return value === "full" ? "full" : "incremental";
 }

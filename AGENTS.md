@@ -9,15 +9,17 @@
 ## 1. 项目目标与边界
 
 ### 1.1 目标
-构建一条可持续、可重建、可扩展的内容生产流水线：
+构建一条可持续、可重建、可扩展的内容生产流水线（SQLite + SSR 方案）：
 
 1. `Genkit + dotPrompt` 生成结构化内容；
-2. 结构化内容写入 `PostgreSQL`；
-3. `Node` 定时任务从数据库读取增量/全量内容，生成 Hugo Markdown；
-4. 生成后执行 `hugo build`（推荐 `hugo --minify`）；
-5. 支持后续模板升级、批量重渲染和自动化发布。
+2. 结构化内容写入 `SQLite`（唯一事实源）；
+3. `Node` 调度任务按增量/全量策略推进内容状态；
+4. `Node SSR` 直接从数据库渲染页面；
+5. 保留 Mainroad 样式静态资产用于前端展示；
+6. 支持后续模板升级、批量重处理和自动化发布。
 
 ### 1.2 非目标
+- 不再保留 Hugo 渲染/构建/发布功能实现。
 - 不以“直接生成 Markdown 文件”作为唯一内容源。
 - 不把聊天记录中的人生/性格分析内容纳入项目需求。
 - 不在未确认细节前做大范围架构漂移。
@@ -28,18 +30,19 @@
 
 ### 2.1 分层职责（不可混淆）
 - **Producer 层**：仅负责 AI 内容生成与入库。
-- **Store 层**：PostgreSQL 作为唯一事实源（Source of Truth）。
-- **Renderer 层**：仅负责从 DB 转换为 Hugo `.md`。
-- **Build/Publish 层**：仅负责 Hugo 构建和发布。
+- **Store 层**：SQLite 作为唯一事实源（Source of Truth）。
+- **SSR 层**：仅负责从 DB 查询并服务端渲染。
+- **Scheduler 层**：仅负责任务编排、状态推进、告警与稳定性控制。
+- **Static Assets 层**：仅负责提供 Mainroad 样式资源（CSS/JS/图片），不承担构建流程。
 
 ### 2.2 数据与表现分离
-- DB 存结构化内容 + 原始输出，不依赖反向解析 `.md`。
-- Hugo Markdown 是“可再生产物”，不是权威数据源。
+- DB 存结构化内容 + 原始输出，不依赖反向解析静态页面。
+- 静态样式资产是展示资源，不是权威数据源。
 
-### 2.3 生成模式
+### 2.3 处理模式
 - 必须同时支持：
-  - **增量生成**（默认）
-  - **全量重建**（模板/规则变化时）
+  - **增量处理**（默认）
+  - **全量重处理**（规则/模板变化时）
 
 ---
 
@@ -67,7 +70,7 @@
 
 ---
 
-## 4. PostgreSQL 约束
+## 4. SQLite 约束
 
 ### 4.1 表设计原则
 - 主业务表必须含有状态字段与错误字段。
@@ -75,35 +78,33 @@
 - 支持按 `status + updated_at` 做增量扫描。
 
 ### 4.2 状态流转（建议）
-`draft -> generated -> rendered -> built -> published`  
+`draft -> generated -> published`  
+审核分支：`generated -> needs_review -> (generated | failed)`  
 失败统一进入 `failed`，并记录 `last_error`。
 
+> 说明：历史字段 `rendered/built` 可保留兼容，不再作为运行主链路。
+
 ### 4.3 幂等性
-- 同一记录重复渲染不能产生重复文件。
-- 同一 slug 多次执行结果应可预测、可覆盖。
+- 同一记录重复执行结果应可预测、可覆盖。
+- 调度与 API 触发需具备幂等控制，避免重复推进状态。
 
 ---
 
-## 5. Renderer 与 Hugo 约束
+## 5. SSR 与静态资源约束
 
-### 5.1 Renderer 任务
-- 从 PG 读取目标记录（增量或全量）。
-- 统一模板生成 Front Matter + Markdown。
-- 写入 `content/posts/*.md`。
+### 5.1 SSR 任务
+- 从 SQLite 读取目标记录（增量或全量）。
+- 提供首页/列表/详情/分页等服务端渲染页面。
+- 保证 SEO 基础字段输出（title/description/canonical 等）。
 
-### 5.2 Hugo 构建
-- Markdown 生成后必须执行构建。
-- 构建失败不得推进发布状态。
+### 5.2 静态资产
+- Mainroad 样式仅作为静态资源提供。
+- 静态资源目录通过 `STATIC_PUBLIC_DIR` 配置。
+- 预检必须校验关键资源可读（如 `css/style.css`、`js/menu.js`）。
 
-### 5.3 Front Matter 规范
-至少包含：
-- `title`
-- `date`
-- `lastmod`
-- `description`
-- `slug`
-- `tags`
-- `draft`
+### 5.3 禁止项
+- 禁止引入 Hugo 构建命令作为运行必要步骤。
+- 禁止恢复 DB -> Markdown -> Hugo build 主流程。
 
 ---
 
@@ -137,7 +138,7 @@
 - 当前聊天结论视为“方向确认”，细节必须多轮确认。
 - 对以下事项必须先确认再实现：
   1. 调度频率
-  2. 发布方式（rsync / git push / CI）
+  2. 对外发布方式（部署/代理/CDN）
   3. 内容质量阈值
   4. URL 覆盖策略
   5. 告警策略
@@ -145,8 +146,8 @@
 ### 7.3 交付标准（DoD）
 每次功能完成至少满足：
 1. 结构化内容可入库；
-2. 可从 DB 生成 Hugo md；
-3. 可触发 Hugo build；
+2. 可从 DB 在 SSR 页面中查询并展示；
+3. 调度可推进内容状态；
 4. 有清晰日志与错误记录；
 5. 可重复执行且结果稳定。
 
@@ -157,14 +158,13 @@
 ```text
 /apps
   /producer      # Genkit + dotPrompt 生成与入库
-  /renderer      # PG -> Hugo Markdown
+  /ssr           # DB -> SSR 页面输出
   /scheduler     # 定时调度与任务编排
+  /common        # 共享类型、仓储、配置
 /db
-  /migrations    # PG schema 迁移
+  /migrations    # SQLite schema 迁移
 /docs
   /architecture  # 架构与流程文档
-/scripts
-  build-and-publish.sh
 ```
 
 ---
@@ -181,5 +181,5 @@
 
 ## 10. 生效说明
 
-本文件从创建时起立即生效，作为后续工作的默认行为准则。  
+本文件从更新时起立即生效，作为后续工作的默认行为准则。  
 任何偏离必须在任务开始前显式说明并获得确认。

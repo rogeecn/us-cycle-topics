@@ -6,8 +6,7 @@ async function main(): Promise<void> {
   const report = await runPreflight();
   logger.info("preflight result", {
     database: report.database,
-    hugo: report.hugo,
-    rsync: report.rsync,
+    staticAssets: report.staticAssets,
   });
 }
 

@@ -4,9 +4,8 @@ import { resetDbForTests } from "../apps/common/src/db.js";
 import { resetEnvForTests } from "../apps/common/src/env.js";
 import {
   acquirePipelineLock,
-  claimArticlesForRender,
   findByContentHash,
-  markBuildSuccess,
+  listReadyForPublication,
   markPublished,
   upsertGeneratedContent,
 } from "../apps/common/src/repository.js";
@@ -94,16 +93,16 @@ describe("Repository State Transitions", () => {
     expect(found?.id).toBe(created.id);
   });
 
-  it("claims generated records for render", async () => {
+  it("selects generated records ready for publication", async () => {
     await upsertGeneratedContent(sampleInput());
-    const claimed = await claimArticlesForRender("incremental", 10);
-    expect(claimed.length).toBe(1);
-    expect(claimed[0].status).toBe("generated");
+    const ready = await listReadyForPublication("incremental", 70, 10);
+
+    expect(ready.length).toBe(1);
+    expect(ready[0].status).toBe("generated");
   });
 
-  it("marks build and publish states", async () => {
+  it("marks published state", async () => {
     const article = await upsertGeneratedContent(sampleInput());
-    await markBuildSuccess([article.id]);
     await markPublished([article.id]);
 
     const found = await findByContentHash("hash123");

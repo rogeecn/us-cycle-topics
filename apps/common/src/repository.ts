@@ -187,78 +187,30 @@ export async function upsertGeneratedContent(
   return mapRow(row);
 }
 
-export async function claimArticlesForRender(
+export async function listReadyForPublication(
   mode: RenderMode,
+  minScore: number,
   batchSize: number,
 ): Promise<StoredContent[]> {
-  return withTransaction((db) => {
-    const whereClause =
-      mode === "full"
-        ? "status IN ('generated','rendered','built','published')"
-        : "status = 'generated'";
-
-    const query = `
-      SELECT *
-      FROM seo_articles
-      WHERE ${whereClause}
-      ORDER BY updated_at ASC, id ASC
-      LIMIT ?
-    `;
-
-    const claimed = db.prepare(query).all(batchSize) as ArticleRow[];
-    if (claimed.length === 0) {
-      return [];
-    }
-
-    const ids = claimed.map((row) => Number(row.id));
-    db
-      .prepare(
-        `UPDATE seo_articles
-         SET status = 'rendered', rendered_at = CURRENT_TIMESTAMP, last_error = NULL
-         WHERE id IN (${placeholders(ids.length)})`,
-      )
-      .run(...ids);
-
-    return claimed.map((row) => mapRow(row));
-  });
-}
-
-export async function markBuildSuccess(ids: number[]): Promise<void> {
-  if (ids.length === 0) {
-    return;
-  }
   const db = getDb();
-  db
-    .prepare(
-      `UPDATE seo_articles
-       SET status = 'built', built_at = CURRENT_TIMESTAMP, last_error = NULL
-       WHERE id IN (${placeholders(ids.length)})`,
-    )
-    .run(...ids);
-}
+  const whereClause =
+    mode === "full"
+      ? "status IN ('generated', 'rendered', 'built', 'published')"
+      : "status = 'generated'";
 
-export async function listPublishEligibleBuiltIds(
-  minScore: number,
-  candidateIds: number[],
-): Promise<number[]> {
-  if (candidateIds.length === 0) {
-    return [];
-  }
-
-  const db = getDb();
   const rows = db
     .prepare(
-      `SELECT id
+      `SELECT *
        FROM seo_articles
-       WHERE id IN (${placeholders(candidateIds.length)})
-         AND status = 'built'
+       WHERE ${whereClause}
          AND json_extract(quality_report, '$.passed') = 1
          AND COALESCE(json_extract(quality_report, '$.scoreTotal'), 0) >= ?
-       ORDER BY updated_at ASC, id ASC`,
+       ORDER BY updated_at ASC, id ASC
+       LIMIT ?`,
     )
-    .all(...candidateIds, minScore) as Array<{ id: number }>;
+    .all(minScore, batchSize) as ArticleRow[];
 
-  return rows.map((row) => Number(row.id));
+  return rows.map((row) => mapRow(row));
 }
 
 export async function markPublished(ids: number[]): Promise<void> {
@@ -269,7 +221,9 @@ export async function markPublished(ids: number[]): Promise<void> {
   db
     .prepare(
       `UPDATE seo_articles
-       SET status = 'published', published_at = CURRENT_TIMESTAMP, last_error = NULL
+       SET status = 'published',
+           published_at = CURRENT_TIMESTAMP,
+           last_error = NULL
        WHERE id IN (${placeholders(ids.length)})`,
     )
     .run(...ids);
@@ -542,19 +496,19 @@ export async function finishPipelineRun(
           failed_count = ?,
           error_message = ?,
           ended_at = ?
-      WHERE run_id = ?`
+      WHERE run_id = ?`,
   ).run(
     record.status,
-    record.renderedCount,
-    record.buildCount,
+    0,
+    0,
     record.publishedCount,
-    record.publishEligibleCount,
-    record.blockedByQuality,
+    0,
+    0,
     record.needsReviewCount,
     record.failedCount,
     record.errorMessage,
     record.endedAt.toISOString(),
-    record.runId
+    record.runId,
   );
 }
 

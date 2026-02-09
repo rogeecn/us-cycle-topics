@@ -1,7 +1,6 @@
 import { access, constants } from "node:fs/promises";
-import { scaffoldHugoSite } from "../../renderer/src/scaffold.js";
-import { spawn } from "node:child_process";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { getEnv } from "../../common/src/env.js";
 import { normalizeError } from "../../common/src/errors.js";
 import { logger } from "../../common/src/logger.js";
@@ -51,15 +50,6 @@ async function runCommand(command: string, args: string[]): Promise<string> {
   });
 }
 
-async function checkPathWritable(name: string, target: string): Promise<DoctorCheck> {
-  try {
-    await access(target, constants.W_OK);
-    return { name, status: "ok", details: `${target} writable` };
-  } catch (error) {
-    return { name, status: "fail", details: normalizeError(error) };
-  }
-}
-
 async function checkCommand(name: string, command: string, args: string[]): Promise<DoctorCheck> {
   try {
     const output = await runCommand(command, args);
@@ -69,25 +59,26 @@ async function checkCommand(name: string, command: string, args: string[]): Prom
   }
 }
 
-async function checkRsyncConfigured(): Promise<DoctorCheck> {
+async function checkStaticAssets(): Promise<DoctorCheck> {
   const env = getEnv();
-  if (env.PUBLISH_METHOD !== "rsync") {
-    return { name: "publish target", status: "warn", details: "PUBLISH_METHOD is not rsync" };
-  }
+  const publicDir = path.resolve(process.cwd(), env.STATIC_PUBLIC_DIR);
 
-  if (!env.RSYNC_TARGET) {
+  try {
+    await access(publicDir, constants.R_OK);
+    await access(path.join(publicDir, "css", "style.css"), constants.R_OK);
+    await access(path.join(publicDir, "js", "menu.js"), constants.R_OK);
     return {
-      name: "publish target",
+      name: "static assets",
+      status: "ok",
+      details: `${publicDir} with css/style.css and js/menu.js`,
+    };
+  } catch (error) {
+    return {
+      name: "static assets",
       status: "fail",
-      details: "RSYNC_TARGET is required when PUBLISH_METHOD=rsync",
+      details: normalizeError(error),
     };
   }
-
-  return {
-    name: "publish target",
-    status: "ok",
-    details: `${env.RSYNC_TARGET}${env.RSYNC_DRY_RUN ? " (dry-run)" : ""}`,
-  };
 }
 
 async function checkPreflight(): Promise<DoctorCheck> {
@@ -96,7 +87,7 @@ async function checkPreflight(): Promise<DoctorCheck> {
     return {
       name: "preflight",
       status: "ok",
-      details: `database=${report.database}, hugo=${report.hugo}, rsync=${report.rsync}`,
+      details: `database=${report.database}, staticAssets=${report.staticAssets}`,
     };
   } catch (error) {
     return {
@@ -109,23 +100,16 @@ async function checkPreflight(): Promise<DoctorCheck> {
 
 async function main(): Promise<void> {
   const env = getEnv();
-  await scaffoldHugoSite();
-
   const checks: DoctorCheck[] = [];
 
   checks.push({
     name: "env",
     status: "ok",
-    details: `cron=${env.SCHEDULER_CRON}, publish=${env.PUBLISH_METHOD}, dryRun=${String(env.RSYNC_DRY_RUN)}`,
+    details: `cron=${env.SCHEDULER_CRON}`,
   });
 
   checks.push(await checkCommand("node", "node", ["-v"]));
-  checks.push(await checkCommand("hugo", env.HUGO_COMMAND, ["version"]));
-  checks.push(await checkCommand("rsync", "rsync", ["--version"]));
-  checks.push(await checkPathWritable("hugo workdir", path.resolve(process.cwd(), env.HUGO_WORKDIR)));
-  checks.push(await checkPathWritable("hugo content", path.resolve(process.cwd(), env.HUGO_CONTENT_DIR)));
-  checks.push(await checkPathWritable("hugo public", path.resolve(process.cwd(), env.HUGO_PUBLIC_DIR)));
-  checks.push(await checkRsyncConfigured());
+  checks.push(await checkStaticAssets());
   checks.push(await checkPreflight());
 
   const failCount = checks.filter((item) => item.status === "fail").length;

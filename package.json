@@ -9,18 +9,13 @@
     "producer": "tsx apps/producer/src/cli.ts",
     "eval:run": "tsx apps/producer/src/eval-runner.ts",
     "seed:sample": "tsx apps/producer/src/sample-seed.ts",
-    "renderer": "tsx apps/renderer/src/cli.ts",
     "pipeline": "tsx apps/scheduler/src/run-once.ts",
     "scheduler": "tsx apps/scheduler/src/daemon.ts",
-    "review": "tsx apps/scheduler/src/review-cli.ts",
     "preflight": "tsx apps/scheduler/src/preflight-cli.ts",
-    "publish:dry-run": "RSYNC_DRY_RUN=true tsx apps/scheduler/src/run-once.ts --mode=incremental",
     "doctor": "tsx apps/scheduler/src/doctor.ts",
-    "smoke": "bash scripts/smoke.sh",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "ssr": "tsx apps/ssr/src/server.ts",
-    "build": "tsc -p tsconfig.json"
+    "ssr": "tsx apps/ssr/src/server.ts"
   },
   "dependencies": {
     "@genkit-ai/compat-oai": "^1.25.0",
