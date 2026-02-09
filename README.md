@@ -1,37 +1,42 @@
 # us-cycle-topics
 
-基于 `Genkit + dotPrompt + PostgreSQL + Hugo + Node Scheduler` 的内容生产流水线。
+基于 **Genkit + dotPrompt + SQLite + Node SSR + Scheduler** 的内容生产流水线。
 
-该项目遵循根目录 `AGENTS.md` 约束：
-- PG 作为唯一事实源（Source of Truth）
-- 支持增量/全量渲染
-- 生成后必须执行 Hugo build
-- 调度任务具备锁、重试、错误落库、可观测日志
+当前主链路：
+- 结构化内容由 Producer 生成并写入 SQLite（唯一事实源）
+- Node SSR 从数据库读取并渲染页面
+- 前端仅静态资源（复用 Mainroad 样式），不使用 Vue/CSR
+- Producer 通过 HTTP API 触发，不再依赖手工执行命令
 
 ---
 
 ## 1. 架构总览
 
-流水线分四层：
+流水线分层：
 
 1. **Producer** (`apps/producer`)
    - 使用 Genkit + dotPrompt 生成结构化内容
-   - 结构化校验后写入 PG
+   - 写入 SQLite
    - 入库记录 `prompt_version / model_version / raw_json`
+   - 质量门控后进入 `generated / needs_review / failed`
 
-2. **Store** (`PostgreSQL`)
-   - 内容权威来源
-   - 状态流转：`draft -> generated -> rendered -> built -> published`，失败为 `failed`
+2. **Store** (`SQLite`)
+   - 作为唯一事实源
+   - 状态流转：`draft -> generated -> rendered -> built -> published`（失败为 `failed`）
 
-3. **Renderer** (`apps/renderer`)
-   - 从 PG 拉取增量/全量内容
-   - 生成 `hugo-site/content/posts/*.md`
-   - 执行 `hugo build --minify`
+3. **SSR Web** (`apps/ssr`)
+   - 首页/详情页服务端渲染
+   - 主列表分页渲染
+   - 暴露 `POST /api/producer/run` 触发生产
 
-4. **Scheduler/Publish** (`apps/scheduler`)
-   - cron 定时调度
-   - advisory lock 防并发重入
-   - 重试/告警/发布（rsync，支持 dry-run）
+4. **Scheduler/Pipeline** (`apps/scheduler`)
+   - 定时调度 pipeline
+   - 任务锁防并发重入
+   - 告警/发布（rsync，支持 dry-run）
+
+5. **Renderer** (`apps/renderer`)
+   - 仍保留 DB->Markdown->Hugo 构建链路代码用于兼容阶段
+   - 当前对外主访问路径是 Node SSR
 
 ---
 
@@ -43,6 +48,7 @@ apps/
   producer/
   renderer/
   scheduler/
+  ssr/
 db/
   migrations/
 docs/
@@ -50,7 +56,6 @@ hugo-site/
 scripts/
 AGENTS.md
 README.md
-docker-compose.yml
 ```
 
 ---
@@ -59,12 +64,9 @@ docker-compose.yml
 
 - Node.js 20+
 - npm
-- PostgreSQL 16+（或 Docker）
-- Hugo
-- rsync（发布用）
-
-如果你本机 Docker 需要 sudo（你当前场景）：
-- 使用 `sudo docker compose ...` 启停容器
+- SQLite（由 `better-sqlite3` 驱动，无需单独服务）
+- Hugo（用于保留兼容链路与静态资源）
+- rsync（若启用发布）
 
 ---
 
@@ -82,130 +84,97 @@ npm install
 cp .env.example .env
 ```
 
-3) 安装 Mainroad 主题（首次）
-
-```bash
-mkdir -p hugo-site/themes
-git clone https://github.com/Vimux/Mainroad hugo-site/themes/mainroad
-```
-
-3) 启动 PG
-
-### 普通权限可用时
-```bash
-npm run pg:up
-```
-
-### 需要 sudo 时
-```bash
-sudo docker compose up -d postgres
-```
-
-4) Bootstrap（preflight + migrate）
+3) 运行 bootstrap（preflight + migrate）
 
 ```bash
 npm run bootstrap
 ```
 
----
+4) 启动 SSR 服务
 
-## 4.1 快速配置（推荐）
+```bash
+npm run ssr
+```
 
-项目已在 `.env.example` 提供两套可直接复制的模板：
-
-- **最小可运行配置（本地联调）**：
-  - 目标：最快跑通生成与构建链路
-  - 特点：`PUBLISH_METHOD=none`、`RSYNC_DRY_RUN=true`
-
-- **生产推荐配置（VPS/远程发布）**：
-  - 目标：稳定定时生产 + 真实发布
-  - 特点：更严格质量阈值、更高重试上限、开启 rsync 发布
-
-另外提供 **OpenAI-compatible** 配置片段（`GENKIT_BASEURL + compat/* model`）。
-
-建议流程：
-1. 先用最小模板跑通。
-2. 再切换到生产模板并做灰度验证。
-3. 最后关闭 `RSYNC_DRY_RUN` 执行真实发布。
+默认地址：`http://localhost:3000`
 
 ---
 
 ## 5. 常用命令
 
-### 数据库
+### 基础
 
 ```bash
 npm run migrate
 npm run bootstrap
-npm run pg:up
-npm run pg:down
-```
-
-> 若需 sudo：手动改为 `sudo docker compose ...`
-
-### 生产/渲染/调度
-
-```bash
-npm run producer # 默认由 AI 自动生成 topic/city/keyword
-npm run producer -- --topic "Scrap Forklift" --city "Houston" --keyword "forklift scrap value houston"
-npm run eval:run -- --dataset=scripts/eval-dataset.json
-npm run renderer -- --mode=incremental
-npm run pipeline -- --mode=incremental
-npm run pipeline -- --mode=full
-npm run scheduler
-npm run review -- list --limit 20
-npm run review -- stats
-npm run review -- approve --id 123 --reviewer alice --notes "checked and approved"
-npm run review -- reject --id 124 --reviewer alice --notes "needs rewrite"
-```
-
-### 诊断与验证
-
-```bash
 npm run preflight
 npm run doctor
 npm run typecheck
-npm run build
+npm test
 ```
 
-### 发布相关
+### Producer / 评估
+
+```bash
+npm run producer
+npm run producer -- --topic "Scrap Forklift" --city "Houston" --keyword "forklift scrap value houston"
+npm run eval:run -- --dataset=scripts/eval-dataset.json
+npm run seed:sample -- --count=3
+```
+
+### SSR / Pipeline / 调度
+
+```bash
+npm run ssr
+npm run pipeline -- --mode=incremental
+npm run pipeline -- --mode=full
+npm run scheduler
+```
+
+### 发布
 
 ```bash
 npm run publish:dry-run
 ```
 
-### 一键冒烟
-
-```bash
-npm run smoke
-```
-
-### Prompt 评估集回归（Starter）
-
-```bash
-npm run eval:run -- --dataset=scripts/eval-dataset.json
-```
-
 ---
 
-## 6. 一键 Smoke 流程说明
+## 6. Producer API（替代手工命令触发）
 
-`scripts/smoke.sh` 执行顺序：
-1. preflight
-2. migrate
-3. 注入样例数据（`seed:sample`）
-4. pipeline 增量执行（强制 rsync dry-run）
+### Endpoint
 
-样例数据注入命令：
+`POST /api/producer/run`
 
-```bash
-npm run seed:sample -- --count=3
+### Headers
+
+- `Authorization: Bearer <PRODUCER_API_TOKEN>`
+- `x-idempotency-key: <unique-key>`
+
+### Body
+
+```json
+{
+  "topic": "Industrial Scrap Metal Recycling",
+  "city": "Chicago",
+  "keyword": "industrial scrap metal recycling chicago",
+  "language": "en"
+}
 ```
 
-也可用环境变量控制：
+`topic/city/keyword` 必填。
+
+### curl 示例
 
 ```bash
-SMOKE_SEED_COUNT=5 npm run seed:sample
+curl -X POST "http://localhost:3000/api/producer/run" \
+  -H "Authorization: Bearer dev-producer-token" \
+  -H "x-idempotency-key: run-20260209-001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "Industrial Scrap Metal Recycling",
+    "city": "Chicago",
+    "keyword": "industrial scrap metal recycling chicago"
+  }'
 ```
 
 ---
@@ -214,134 +183,98 @@ SMOKE_SEED_COUNT=5 npm run seed:sample
 
 以 `.env.example` 为准，核心项如下：
 
-- `DATABASE_URL`
-- `GENKIT_BASEURL`（可选，用于 OpenAI-compatible base URL；启用后可在 dotPrompt 中使用 `compat/*` 模型）
+### 数据库与服务
+- `SQLITE_DB_PATH`
+- `SITE_BASE_URL`
+- `PRODUCER_API_TOKEN`
+- `PRODUCER_REQUEST_IDEMPOTENCY_TTL_SECONDS`
+
+### Genkit / Prompt
+- `GENKIT_BASEURL`
 - `GENKIT_PROMPT_VERSION`
 - `PRODUCER_AUTO_INPUT_PROMPT_NAME`
 - `PRODUCER_OUTLINE_PROMPT_NAME`
 - `PRODUCER_PROMPT_NAME`
+
+### 质量门控
 - `QUALITY_MIN_SCORE`
 - `QUALITY_SOFT_REVIEW_THRESHOLD`
 - `PRODUCER_MAX_REVISIONS`
 - `NEEDS_REVIEW_ALERT_THRESHOLD`
+
+### 调度与发布
+- `SCHEDULER_CRON`
+- `PREFLIGHT_ON_RUN`
+- `PREFLIGHT_ENSURE_HUGO_SCAFFOLD`
+- `RETRY_MAX_ATTEMPTS`
+- `RETRY_BACKOFF_MS`
+- `MAX_RENDER_LOCK_SECONDS`
+- `PUBLISH_METHOD` (`rsync` / `none`)
+- `RSYNC_TARGET`
+- `RSYNC_FLAGS`
+- `RSYNC_DRY_RUN`
+
+### 兼容参数（保留）
 - `HUGO_CONTENT_DIR`
 - `HUGO_COMMAND`
 - `HUGO_BUILD_ARGS`
 - `HUGO_WORKDIR`
 - `HUGO_PUBLIC_DIR`
 - `HUGO_THEME`
-- `SCHEDULER_CRON`
-- `PREFLIGHT_ON_RUN`
-- `PREFLIGHT_ENSURE_HUGO_SCAFFOLD`
-- `PUBLISH_METHOD` (`rsync` / `none`)
-- `RSYNC_TARGET`
-- `RSYNC_FLAGS`
-- `RSYNC_DRY_RUN`
-- `SMOKE_SEED_COUNT`
-- `ALERT_WEBHOOK_URL`
-
-模型路由规则：
-- 模型选择由各个 dotPrompt 文件中的 `model:` 字段决定（支持不同 prompt 使用不同模型）。
-- Genkit 会按模型名前缀路由到对应 provider（例如 `googleai/*`、`compat/*`）。
-- 当设置 `GENKIT_BASEURL` 时，会额外注册 `compat` provider（`@genkit-ai/compat-oai`）。
-- 若未设置 `GENKIT_BASEURL`，则只能使用已注册的 provider 模型。
-
-### 配置模板（可直接复制）
-
-#### Google GenAI（默认）
-
-```env
-GENKIT_BASEURL=
-```
-
-并在对应 prompt 中声明模型，例如：
-
-```yaml
----
-model: googleai/gemini-2.5-flash
-input:
-  schema:
-    ...
----
-```
-
-#### OpenAI-compatible（自定义 baseURL）
-
-```env
-GENKIT_BASEURL=https://your-openai-compatible-endpoint/v1
-OPENAI_API_KEY=your_api_key_here
-```
-
-并在对应 prompt 中声明模型，例如：
-
-```yaml
----
-model: compat/gpt-4o-mini
-input:
-  schema:
-    ...
----
-```
 
 ---
 
-## 7.1 Mainroad 适配说明
+## 8. 状态与发布语义
 
-当前系统已按 Mainroad 主题适配：
-- 站点配置默认 `theme = "mainroad"`
-- Front Matter 增加 Mainroad 常用字段：`thumbnail`、`lead`、`authorbox`、`pager`、`toc`、`comments`
-- taxonomy 使用 `categories` 与 `tags`
-- preflight/scaffold 会校验 `hugo-site/themes/mainroad` 是否存在，不存在会报错提示安装
-
-> 如需切换主题，可通过 `HUGO_THEME` 修改，但 Front Matter 字段可能需要同步调整。
+- 内容生产后先进入质量分层：`generated / needs_review / failed`
+- `rendered` / `built` / `published` 由 pipeline 与发布逻辑推进
+- 仅当 `PUBLISH_METHOD=rsync` 且 `RSYNC_DRY_RUN=false` 时推进 `published`
 
 ---
 
-## 8. 发布状态与职责边界
+## 9. 测试与验证
 
-- Renderer 只负责到 `built`
-- Scheduler 在发布成功后推进 `published`
-- `RSYNC_DRY_RUN=true` 时不会推进 `published`
-- 质量分层策略：
-  - `hard failure` 存在时直接 `failed`
-  - 无 hard failure 且 `score >= QUALITY_MIN_SCORE` 直接 `generated`
-  - 无 hard failure 但 `score` 位于 `QUALITY_SOFT_REVIEW_THRESHOLD ~ QUALITY_MIN_SCORE` 进入 `needs_review`
-  - `producer` 会先进行最多 `PRODUCER_MAX_REVISIONS` 次自动修订（仅 soft failures 场景）再决定状态
-  - 若检测到与历史内容 `content_hash` 完全重复，会强制进入 `needs_review`（`possible_duplicate_content`）
-- 当 `needs_review` 队列数量超过 `NEEDS_REVIEW_ALERT_THRESHOLD` 时，scheduler 会触发告警并写入 `alert_logs`
-
-这样保证了 Build/Publish 分层清晰，符合 `AGENTS.md` 约束。
-
----
-
-## 9. 常见问题
-
-### Q1: doctor 提示 DB 连接失败（ECONNREFUSED）
-通常是 PostgreSQL 未启动，或端口/地址不对。
-
-- 启动 PG（sudo 场景）：
 ```bash
-sudo docker compose up -d postgres
-```
-- 再执行：
-```bash
-npm run doctor
+npm test
+npm run typecheck
 ```
 
-### Q2: preflight 报 rsync 相关失败
-- 若暂时不发布，设 `PUBLISH_METHOD=none`
-- 若要发布，确保 `RSYNC_TARGET` 正确且可访问
-
-### Q3: Hugo 目录不存在
-已支持 scaffold 自动创建，确保 `PREFLIGHT_ENSURE_HUGO_SCAFFOLD=true`。
+当前已覆盖：
+- repository 状态流转
+- SSR 数据路由基础
+- producer API 鉴权与参数校验
 
 ---
 
-## 10. 开发规范
+## 10. 常见问题
 
-本项目实现和后续改造必须遵循：
+### Q1: Producer API 返回 401
+检查 `Authorization` 是否与 `PRODUCER_API_TOKEN` 一致。
 
-- `AGENTS.md`（强约束，优先级最高）
+### Q2: Producer API 返回 400 missing x-idempotency-key
+必须传 `x-idempotency-key`，用于幂等去重。
+
+### Q3: preflight 报表缺失
+先执行：
+
+```bash
+npm run migrate
+```
+
+或直接：
+
+```bash
+npm run bootstrap
+```
+
+### Q4: 页面样式异常
+确认 `hugo-site/public/css/style.css` 与 `hugo-site/public/js/menu.js` 存在。
+
+---
+
+## 11. 开发规范
+
+- 遵循根目录 `AGENTS.md`
 - 小步迭代
 - 修 bug 不夹带无关重构
-- 关键策略变更需先确认
+- 关键策略变更先确认

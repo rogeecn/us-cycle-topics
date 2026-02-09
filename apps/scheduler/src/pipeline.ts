@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { getEnv } from "../../common/src/env.js";
-import { getPool } from "../../common/src/db.js";
 import { logger } from "../../common/src/logger.js";
 import {
   acquirePipelineLock,
@@ -40,11 +39,8 @@ export async function runPipeline(mode: RenderMode): Promise<void> {
     endedAt: startedAt,
   };
 
-  const pool = getPool();
-  const client = await pool.connect();
-
   try {
-    const locked = await acquirePipelineLock(client, LOCK_KEY);
+    const locked = await acquirePipelineLock(null, LOCK_KEY);
     if (!locked) {
       logger.warn("pipeline lock is already held, skip run", { mode });
       return;
@@ -74,7 +70,9 @@ export async function runPipeline(mode: RenderMode): Promise<void> {
       throw new Error(`publish failed: ${publishResult.stderr || publishResult.stdout}`);
     }
 
-    if (!env.RSYNC_DRY_RUN && publishEligibleIds.length > 0) {
+    const shouldMarkPublished =
+      env.PUBLISH_METHOD === "rsync" && !env.RSYNC_DRY_RUN && publishEligibleIds.length > 0;
+    if (shouldMarkPublished) {
       await markPublished(publishEligibleIds);
     }
 
@@ -86,7 +84,7 @@ export async function runPipeline(mode: RenderMode): Promise<void> {
     stats.publishEligibleCount = publishEligibleIds.length;
     stats.blockedByQuality = blockedByQuality;
     stats.needsReviewCount = needsReviewCount;
-    stats.publishedCount = env.RSYNC_DRY_RUN ? 0 : publishEligibleIds.length;
+    stats.publishedCount = shouldMarkPublished ? publishEligibleIds.length : 0;
     stats.failedCount = 0;
     stats.status = "success";
     stats.errorMessage = null;
@@ -128,7 +126,6 @@ export async function runPipeline(mode: RenderMode): Promise<void> {
     });
   } finally {
     await finishPipelineRun(stats);
-    await releasePipelineLock(client, LOCK_KEY);
-    client.release();
+    await releasePipelineLock(null, LOCK_KEY);
   }
 }

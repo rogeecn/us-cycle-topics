@@ -1,11 +1,20 @@
 import { access, constants } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { getPool } from "../../common/src/db.js";
+import { getDb } from "../../common/src/db.js";
 import { getEnv } from "../../common/src/env.js";
 import { normalizeError } from "../../common/src/errors.js";
 import { logger } from "../../common/src/logger.js";
 import { withRetry } from "./retry.js";
 import { scaffoldHugoSite } from "../../renderer/src/scaffold.js";
+
+const REQUIRED_TABLES = [
+  "schema_migrations",
+  "seo_articles",
+  "pipeline_runs",
+  "alert_logs",
+  "pipeline_locks",
+  "producer_trigger_requests",
+];
 
 export interface PreflightReport {
   database: "ok" | "failed";
@@ -14,10 +23,26 @@ export interface PreflightReport {
 }
 
 async function checkDatabase(): Promise<void> {
-  const pool = getPool();
-  const result = await pool.query("SELECT 1 AS ok");
-  if ((result.rowCount ?? 0) === 0) {
-    throw new Error("database ping returned no rows");
+  const db = getDb();
+  const row = db.prepare("SELECT 1 AS ok").get();
+  if (!row) {
+    throw new Error("database ping failed");
+  }
+
+  for (const tableName of REQUIRED_TABLES) {
+    const exists = db
+      .prepare(
+        `SELECT 1 AS ok
+         FROM sqlite_master
+         WHERE type = 'table'
+           AND name = ?
+         LIMIT 1`,
+      )
+      .get(tableName);
+
+    if (!exists) {
+      throw new Error(`required table missing: ${tableName}`);
+    }
   }
 }
 

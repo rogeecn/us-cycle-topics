@@ -1,76 +1,64 @@
-import { readdir, readFile } from "node:fs/promises";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Pool } from "pg";
-import { getEnv } from "../apps/common/src/env.js";
+import { getDb } from "../apps/common/src/db.js";
 import { logger } from "../apps/common/src/logger.js";
+import Database from "better-sqlite3";
 
-async function ensureMigrationsTable(pool: Pool): Promise<void> {
-  await pool.query(`
+function ensureMigrationsTable(db: Database.Database): void {
+  db.prepare(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version TEXT PRIMARY KEY,
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
-  `);
+  `).run();
 }
 
-async function migrationApplied(pool: Pool, version: string): Promise<boolean> {
-  const result = await pool.query<{ version: string }>(
-    "SELECT version FROM schema_migrations WHERE version = $1",
-    [version],
-  );
-  return (result.rowCount ?? 0) > 0;
+function migrationApplied(db: Database.Database, version: string): boolean {
+  const row = db
+    .prepare("SELECT version FROM schema_migrations WHERE version = ?")
+    .get(version);
+
+  return Boolean(row);
 }
 
-async function listMigrationFiles(): Promise<string[]> {
+function listMigrationFiles(): string[] {
   const migrationDir = path.resolve(process.cwd(), "db/migrations");
-  const entries = await readdir(migrationDir, { withFileTypes: true });
+  const entries = fs.readdirSync(migrationDir, { withFileTypes: true });
 
   return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
-    .map((entry) => entry.name)
+    .filter((entry: fs.Dirent) => entry.isFile() && entry.name.endsWith(".sql"))
+    .map((entry: fs.Dirent) => entry.name)
     .sort();
 }
 
-async function applySingleMigration(pool: Pool, fileName: string): Promise<void> {
-  const version = fileName.replace(/\.sql$/, "");
-
-  if (await migrationApplied(pool, version)) {
-    logger.info("migration already applied", { version });
-    return;
-  }
-
-  const sqlPath = path.resolve(process.cwd(), "db/migrations", fileName);
-  const sql = await readFile(sqlPath, "utf8");
-
-  await pool.query(sql);
-  await pool.query(
-    "INSERT INTO schema_migrations(version, applied_at) VALUES ($1, NOW())",
-    [version],
-  );
-
-  logger.info("migration applied", { version });
-}
-
 export async function runMigration(): Promise<void> {
-  const env = getEnv();
-  const pool = new Pool({ connectionString: env.DATABASE_URL });
+  const db = getDb();
+  ensureMigrationsTable(db);
 
-  try {
-    await ensureMigrationsTable(pool);
-    const migrationFiles = await listMigrationFiles();
-
-    await pool.query("BEGIN");
+  const migrationFiles = listMigrationFiles();
+  const runInTransaction = db.transaction(() => {
     for (const fileName of migrationFiles) {
-      await applySingleMigration(pool, fileName);
+      const version = fileName.replace(/\.sql$/, "");
+
+      if (migrationApplied(db, version)) {
+        logger.info("migration already applied", { version });
+        continue;
+      }
+
+      const sqlPath = path.resolve(process.cwd(), "db/migrations", fileName);
+      const sql = fs.readFileSync(sqlPath, "utf8");
+
+      db.exec(sql);
+      db.prepare(
+        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, CURRENT_TIMESTAMP)",
+      ).run(version);
+
+      logger.info("migration applied", { version });
     }
-    await pool.query("COMMIT");
-  } catch (error) {
-    await pool.query("ROLLBACK");
-    throw error;
-  } finally {
-    await pool.end();
-  }
+  });
+
+  runInTransaction();
 }
 
 const directRun = process.argv[1] ? path.resolve(process.argv[1]) : "";

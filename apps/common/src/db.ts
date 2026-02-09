@@ -1,32 +1,42 @@
-import { Pool, PoolClient } from "pg";
+import Database from "better-sqlite3";
+import fs from "node:fs";
+import path from "node:path";
 import { getEnv } from "./env.js";
 
-let cachedPool: Pool | null = null;
+let cachedDb: Database.Database | null = null;
 
-export function getPool(): Pool {
-  if (cachedPool) {
-    return cachedPool;
+export function getDb(): Database.Database {
+  if (cachedDb) {
+    return cachedDb;
   }
 
   const env = getEnv();
-  cachedPool = new Pool({ connectionString: env.DATABASE_URL });
-  return cachedPool;
+  const dbPath = path.resolve(process.cwd(), env.SQLITE_DB_PATH);
+  const dbDir = path.dirname(dbPath);
+
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+
+  cachedDb = new Database(dbPath);
+  cachedDb.pragma("journal_mode = WAL");
+  cachedDb.pragma("foreign_keys = ON");
+  cachedDb.pragma("busy_timeout = 5000");
+
+  return cachedDb;
 }
 
-export async function withTransaction<T>(
-  handler: (client: PoolClient) => Promise<T>,
-): Promise<T> {
-  const pool = getPool();
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const result = await handler(client);
-    await client.query("COMMIT");
-    return result;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
+export function resetDbForTests(): void {
+  if (!cachedDb) {
+    return;
   }
+
+  cachedDb.close();
+  cachedDb = null;
+}
+
+export function withTransaction<T>(handler: (db: Database.Database) => T): T {
+  const db = getDb();
+  const transaction = db.transaction(() => handler(db));
+  return transaction();
 }

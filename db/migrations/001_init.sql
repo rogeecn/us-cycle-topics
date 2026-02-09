@@ -1,10 +1,10 @@
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version TEXT PRIMARY KEY,
-  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS seo_articles (
-  id BIGSERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   source_key TEXT NOT NULL UNIQUE,
   topic TEXT NOT NULL,
   city TEXT NOT NULL,
@@ -12,21 +12,25 @@ CREATE TABLE IF NOT EXISTS seo_articles (
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
-  tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+  tags TEXT NOT NULL DEFAULT '[]',
   content TEXT NOT NULL,
-  lastmod TIMESTAMPTZ NOT NULL,
+  lastmod TEXT NOT NULL,
   prompt_version TEXT NOT NULL,
   model_version TEXT NOT NULL,
-  raw_json JSONB NOT NULL,
-  quality_report JSONB NOT NULL,
+  raw_json TEXT NOT NULL,
+  quality_report TEXT NOT NULL,
   content_hash TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('draft', 'generated', 'rendered', 'built', 'published', 'failed')),
+  status TEXT NOT NULL CHECK (status IN ('draft', 'generated', 'needs_review', 'rendered', 'built', 'published', 'failed')),
   last_error TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  rendered_at TIMESTAMPTZ,
-  built_at TIMESTAMPTZ,
-  published_at TIMESTAMPTZ
+  review_reason TEXT,
+  review_notes TEXT,
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  rendered_at TEXT,
+  built_at TEXT,
+  published_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_seo_articles_status_updated_at
@@ -36,40 +40,49 @@ CREATE INDEX IF NOT EXISTS idx_seo_articles_city_topic
   ON seo_articles (city, topic);
 
 CREATE TABLE IF NOT EXISTS pipeline_runs (
-  id BIGSERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id TEXT NOT NULL UNIQUE,
   mode TEXT NOT NULL CHECK (mode IN ('incremental', 'full')),
   status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed')),
   rendered_count INTEGER NOT NULL DEFAULT 0,
   build_count INTEGER NOT NULL DEFAULT 0,
+  publish_eligible_count INTEGER NOT NULL DEFAULT 0,
+  blocked_by_quality INTEGER NOT NULL DEFAULT 0,
+  needs_review_count INTEGER NOT NULL DEFAULT 0,
   published_count INTEGER NOT NULL DEFAULT 0,
   failed_count INTEGER NOT NULL DEFAULT 0,
   error_message TEXT,
-  started_at TIMESTAMPTZ NOT NULL,
-  ended_at TIMESTAMPTZ
+  started_at TEXT NOT NULL,
+  ended_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_started_at
   ON pipeline_runs (started_at DESC);
 
 CREATE TABLE IF NOT EXISTS alert_logs (
-  id BIGSERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   alert_type TEXT NOT NULL,
   alert_key TEXT NOT NULL UNIQUE,
-  payload JSONB NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE OR REPLACE FUNCTION touch_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+CREATE TABLE IF NOT EXISTS pipeline_locks (
+  lock_key INTEGER PRIMARY KEY,
+  owner_token TEXT NOT NULL,
+  acquired_at_epoch INTEGER NOT NULL,
+  expires_at_epoch INTEGER NOT NULL
+);
 
-DROP TRIGGER IF EXISTS trg_seo_articles_touch_updated_at ON seo_articles;
-CREATE TRIGGER trg_seo_articles_touch_updated_at
-BEFORE UPDATE ON seo_articles
+CREATE INDEX IF NOT EXISTS idx_pipeline_locks_expires_at_epoch
+  ON pipeline_locks (expires_at_epoch);
+
+CREATE TRIGGER IF NOT EXISTS trg_seo_articles_touch_updated_at
+AFTER UPDATE ON seo_articles
 FOR EACH ROW
-EXECUTE FUNCTION touch_updated_at();
+WHEN NEW.updated_at = OLD.updated_at
+BEGIN
+  UPDATE seo_articles
+  SET updated_at = CURRENT_TIMESTAMP
+  WHERE id = NEW.id;
+END;

@@ -26,7 +26,10 @@ function booleanFlag(defaultValue: boolean) {
 }
 
 const EnvSchema = z.object({
-  DATABASE_URL: z.string().min(1),
+  SQLITE_DB_PATH: z.string().default("./db/us-cycle-topics.db"),
+  PRODUCER_API_TOKEN: z.string().min(1).default("dev-producer-token"),
+  PRODUCER_REQUEST_IDEMPOTENCY_TTL_SECONDS: z.coerce.number().int().positive().default(600),
+  SITE_BASE_URL: z.string().url().default("http://localhost:3000"),
   GENKIT_BASEURL: z.preprocess(
     (value) => {
       if (typeof value === "string" && value.trim() === "") {
@@ -72,6 +75,10 @@ const EnvSchema = z.object({
 export type AppEnv = z.infer<typeof EnvSchema>;
 
 let cachedEnv: AppEnv | null = null;
+
+export function resetEnvForTests(): void {
+  cachedEnv = null;
+}
 
 export function getEnv(): AppEnv {
   if (cachedEnv) {

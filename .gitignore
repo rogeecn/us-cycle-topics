@@ -29,3 +29,8 @@ Thumbs.db
 *.swp
 *.swo
 node_modules
+
+# Local SQLite files
+*.db
+*.db-shm
+*.db-wal
