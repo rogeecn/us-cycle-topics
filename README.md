@@ -82,6 +82,13 @@ npm install
 cp .env.example .env
 ```
 
+3) 安装 Mainroad 主题（首次）
+
+```bash
+mkdir -p hugo-site/themes
+git clone https://github.com/Vimux/Mainroad hugo-site/themes/mainroad
+```
+
 3) 启动 PG
 
 ### 普通权限可用时
@@ -222,6 +229,7 @@ SMOKE_SEED_COUNT=5 npm run seed:sample
 - `HUGO_BUILD_ARGS`
 - `HUGO_WORKDIR`
 - `HUGO_PUBLIC_DIR`
+- `HUGO_THEME`
 - `SCHEDULER_CRON`
 - `PREFLIGHT_ON_RUN`
 - `PREFLIGHT_ENSURE_HUGO_SCAFFOLD`
@@ -274,6 +282,18 @@ input:
     ...
 ---
 ```
+
+---
+
+## 7.1 Mainroad 适配说明
+
+当前系统已按 Mainroad 主题适配：
+- 站点配置默认 `theme = "mainroad"`
+- Front Matter 增加 Mainroad 常用字段：`thumbnail`、`lead`、`authorbox`、`pager`、`toc`、`comments`
+- taxonomy 使用 `categories` 与 `tags`
+- preflight/scaffold 会校验 `hugo-site/themes/mainroad` 是否存在，不存在会报错提示安装
+
+> 如需切换主题，可通过 `HUGO_THEME` 修改，但 Front Matter 字段可能需要同步调整。
 
 ---
 

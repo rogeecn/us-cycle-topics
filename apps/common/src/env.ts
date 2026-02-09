@@ -49,6 +49,7 @@ const EnvSchema = z.object({
   HUGO_BUILD_ARGS: z.string().default("--minify"),
   HUGO_WORKDIR: z.string().default("./hugo-site"),
   HUGO_PUBLIC_DIR: z.string().default("./hugo-site/public"),
+  HUGO_THEME: z.string().default("mainroad"),
   PUBLISH_METHOD: z.enum(["rsync", "none"]).default("rsync"),
   RSYNC_TARGET: z.string().optional(),
   RSYNC_FLAGS: z.string().default("-az --delete"),
