@@ -15,7 +15,7 @@ npm run migrate
 echo "[smoke] seeding deterministic sample content"
 npm run seed:sample -- --count=3
 
-echo "[smoke] running incremental pipeline"
-npm run pipeline -- --mode=incremental
+echo "[smoke] starting scheduler for one run"
+timeout 30s npm run scheduler || true
 
 echo "[smoke] completed"

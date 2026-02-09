@@ -12,7 +12,6 @@ services:
       STATIC_PUBLIC_DIR: /app/static-public
       SITE_BASE_URL: http://localhost:3000
       PREFLIGHT_ON_RUN: "true"
-      PRODUCER_API_TOKEN: ${PRODUCER_API_TOKEN:-dev-producer-token}
     volumes:
       - sqlite_data:/data
     restart: "no"
@@ -36,7 +35,6 @@ services:
       SITE_BASE_URL: http://localhost:3000
       PREFLIGHT_ON_RUN: "true"
       SCHEDULER_CRON: "0 * * * *"
-      PRODUCER_API_TOKEN: ${PRODUCER_API_TOKEN:-dev-producer-token}
     ports:
       - "3000:3000"
     volumes:
@@ -63,7 +61,6 @@ services:
       SITE_BASE_URL: http://localhost:3000
       PREFLIGHT_ON_RUN: "true"
       SCHEDULER_CRON: "0 * * * *"
-      PRODUCER_API_TOKEN: ${PRODUCER_API_TOKEN:-dev-producer-token}
     volumes:
       - sqlite_data:/data
 

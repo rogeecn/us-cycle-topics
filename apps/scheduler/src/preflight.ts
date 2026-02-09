@@ -11,7 +11,6 @@ const REQUIRED_TABLES = [
   "pipeline_runs",
   "alert_logs",
   "pipeline_locks",
-  "producer_trigger_requests",
 ];
 
 export interface PreflightReport {

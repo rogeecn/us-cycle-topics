@@ -6,7 +6,7 @@
 
 - 结构化内容由 Producer 生成并写入 SQLite（唯一事实源）
 - Node SSR 从数据库读取并渲染页面
-- Producer 通过 HTTP API 触发，不再依赖手工命令
+- Producer 通过 CLI/调度链路触发（已移除 `/api/producer/run` 接口）
 - 保留 Mainroad 主题样式资产（静态文件），但**不再保留 Hugo 渲染/构建/发布功能实现**
 
 ---
@@ -23,7 +23,6 @@
 3. **SSR Web** (`apps/ssr`)
    - 服务端渲染首页/详情页
    - 静态资源目录由 `STATIC_PUBLIC_DIR` 提供（默认 `./static-public`）
-   - 暴露 `POST /api/producer/run`
 
 4. **Scheduler** (`apps/scheduler`)
    - 定时执行 pipeline
@@ -110,60 +109,18 @@ npm run seed:sample -- --count=3
 
 ```bash
 npm run ssr
-npm run pipeline -- --mode=incremental
-npm run pipeline -- --mode=full
 npm run scheduler
 ```
 
 说明：
 - `seed:sample`：开发/测试造数用，生产通常不用。
-- `pipeline`：单次手动补跑（增量/全量）用，仍有价值。
-- `scheduler`：生产定时任务主入口，必须保留。
+- 发布改为 producer 成功后直接推进 `published`，不再需要手工执行 `pipeline` 命令。
+- `scheduler`：生产定时任务主入口，负责补偿扫描、告警和健康运维。
 - `preflight`：启动前健康检查，建议保留。
 
 ---
 
-## 6. Producer API
-
-### Endpoint
-
-`POST /api/producer/run`
-
-### Headers
-
-- `Authorization: Bearer <PRODUCER_API_TOKEN>`
-- `x-idempotency-key: <unique-key>`
-
-### Body
-
-```json
-{
-  "topic": "Industrial Scrap Metal Recycling",
-  "city": "Chicago",
-  "keyword": "industrial scrap metal recycling chicago",
-  "language": "en"
-}
-```
-
-`topic/city/keyword` 必填。
-
-### curl 示例
-
-```bash
-curl -X POST "http://localhost:3000/api/producer/run" \
-  -H "Authorization: Bearer dev-producer-token" \
-  -H "x-idempotency-key: run-20260209-001" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "topic": "Industrial Scrap Metal Recycling",
-    "city": "Chicago",
-    "keyword": "industrial scrap metal recycling chicago"
-  }'
-```
-
----
-
-## 7. 核心环境变量
+## 6. 核心环境变量
 
 以 `.env.example` 为准：
 
@@ -171,8 +128,6 @@ curl -X POST "http://localhost:3000/api/producer/run" \
 - `SQLITE_DB_PATH`
 - `SITE_BASE_URL`
 - `STATIC_PUBLIC_DIR`
-- `PRODUCER_API_TOKEN`
-- `PRODUCER_REQUEST_IDEMPOTENCY_TTL_SECONDS`
 
 ### Genkit / Prompt
 - `GENKIT_BASEURL`
@@ -219,13 +174,7 @@ npm run typecheck
 
 ## 10. 常见问题
 
-### Q1: Producer API 返回 401
-检查 `Authorization` 与 `PRODUCER_API_TOKEN` 是否一致。
-
-### Q2: Producer API 返回 400 missing x-idempotency-key
-必须传 `x-idempotency-key`。
-
-### Q3: preflight 失败
+### Q1: preflight 失败
 先执行：
 
 ```bash

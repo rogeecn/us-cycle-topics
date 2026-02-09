@@ -12,6 +12,7 @@ import { evaluateQuality } from "../../common/src/quality.js";
 import { sha256 } from "../../common/src/hash.js";
 import {
   findByContentHash,
+  markPublished,
   upsertGeneratedContent,
 } from "../../common/src/repository.js";
 import { ProducerRequest, QualityReport } from "../../common/src/types.js";
@@ -264,11 +265,15 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
     reviewReason: qualityDecision.reviewReason,
   });
 
+  if (record.status === "generated") {
+    await markPublished([record.id]);
+  }
+
   logger.info("producer stored article", {
     id: record.id,
     sourceKey: record.sourceKey,
     slug: record.slug,
-    status: record.status,
+    status: record.status === "generated" ? "published" : record.status,
     qualityPassed: record.qualityReport.passed,
     qualityScore: record.qualityReport.scoreTotal,
     hardFailureCount: record.qualityReport.hardFailureCount,

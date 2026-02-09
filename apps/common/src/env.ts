@@ -27,8 +27,6 @@ function booleanFlag(defaultValue: boolean) {
 
 const EnvSchema = z.object({
   SQLITE_DB_PATH: z.string().default("./db/us-cycle-topics.db"),
-  PRODUCER_API_TOKEN: z.string().min(1).default("dev-producer-token"),
-  PRODUCER_REQUEST_IDEMPOTENCY_TTL_SECONDS: z.coerce.number().int().positive().default(600),
   SITE_BASE_URL: z.string().url().default("http://localhost:3000"),
   GENKIT_BASEURL: z.preprocess(
     (value) => {
