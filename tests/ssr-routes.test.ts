@@ -89,7 +89,7 @@ describe("SSR data routing contracts", () => {
         contentHash: "markdown-hash",
         city: "Sidebar City",
         tags: ["sidebar-tag", "safety"],
-        content: "# Heading\n\nParagraph with [link](https://example.com).\n\n<script>alert('xss')</script>",
+        content: "# Visible Article\n\nParagraph with [link](https://example.com).\n\n<script>alert('xss')</script>",
       }),
     );
     await markPublished([inserted.id]);
@@ -98,7 +98,8 @@ describe("SSR data routing contracts", () => {
     const response = await request(app).get("/posts/markdown-article");
 
     expect(response.status).toBe(200);
-    expect(response.text).toContain("<h1>Heading</h1>");
+    expect(response.text).toContain('<h1 class="post__title">Visible Article</h1>');
+    expect(response.text).not.toContain('<div class="content post__content clearfix">\n\t\t\t<h1>Visible Article</h1>');
     expect(response.text).toContain('href="https://example.com"');
     expect(response.text).toContain("&lt;script&gt;alert");
     expect(response.text).not.toContain("<p><script>");

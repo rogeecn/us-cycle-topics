@@ -290,6 +290,50 @@ export async function listPublishedArticles(
   return rows.map((row) => mapRow(row));
 }
 
+export async function listPublishedArticlesByCategory(
+  category: string,
+  limit: number,
+  offset: number = 0,
+): Promise<StoredContent[]> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT *
+       FROM seo_articles
+       WHERE status = 'published'
+         AND city = ?
+       ORDER BY lastmod DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(category, limit, offset) as ArticleRow[];
+
+  return rows.map((row) => mapRow(row));
+}
+
+export async function listPublishedArticlesByTag(
+  tag: string,
+  limit: number,
+  offset: number = 0,
+): Promise<StoredContent[]> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT *
+       FROM seo_articles AS a
+       WHERE a.status = 'published'
+         AND EXISTS (
+           SELECT 1
+           FROM json_each(a.tags) AS j
+           WHERE j.value = ?
+         )
+       ORDER BY a.lastmod DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(tag, limit, offset) as ArticleRow[];
+
+  return rows.map((row) => mapRow(row));
+}
+
 export async function getPublishedArticleBySlug(
   slug: string,
 ): Promise<StoredContent | null> {
@@ -619,73 +663,3 @@ export async function appendAlertLog(
     .run(alertType, alertKey, JSON.stringify(payload));
 }
 
-export async function acquireProducerTriggerRequest(
-  idempotencyKey: string,
-  requestHash: string,
-): Promise<{ acquired: true } | { acquired: false; responseJson: string | null }> {
-  return withTransaction((db) => {
-    const existing = db
-      .prepare(
-        `SELECT status, response_json
-         FROM producer_trigger_requests
-         WHERE idempotency_key = ?
-         LIMIT 1`,
-      )
-      .get(idempotencyKey) as
-      | { status: "in_progress" | "succeeded" | "failed"; response_json: string | null }
-      | undefined;
-
-    if (existing) {
-      return { acquired: false as const, responseJson: existing.response_json };
-    }
-
-    db
-      .prepare(
-        `INSERT INTO producer_trigger_requests(idempotency_key, request_hash, status, response_json)
-         VALUES (?, ?, 'in_progress', NULL)`,
-      )
-      .run(idempotencyKey, requestHash);
-
-    return { acquired: true as const };
-  });
-}
-
-export async function markProducerTriggerRequestSucceeded(
-  idempotencyKey: string,
-  responseJson: string,
-): Promise<void> {
-  const db = getDb();
-  db
-    .prepare(
-      `UPDATE producer_trigger_requests
-       SET status = 'succeeded', response_json = ?
-       WHERE idempotency_key = ?`,
-    )
-    .run(responseJson, idempotencyKey);
-}
-
-export async function markProducerTriggerRequestFailed(
-  idempotencyKey: string,
-  responseJson: string,
-): Promise<void> {
-  const db = getDb();
-  db
-    .prepare(
-      `UPDATE producer_trigger_requests
-       SET status = 'failed', response_json = ?
-       WHERE idempotency_key = ?`,
-    )
-    .run(responseJson, idempotencyKey);
-}
-
-export async function cleanupExpiredProducerTriggerRequests(
-  ttlSeconds: number,
-): Promise<void> {
-  const db = getDb();
-  db
-    .prepare(
-      `DELETE FROM producer_trigger_requests
-       WHERE strftime('%s', created_at) < (strftime('%s', 'now') - ?)`,
-    )
-    .run(ttlSeconds);
-}
