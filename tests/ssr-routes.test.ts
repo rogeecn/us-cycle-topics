@@ -1,8 +1,10 @@
 import fs from "node:fs";
+import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { resetDbForTests } from "../apps/common/src/db.js";
 import { resetEnvForTests } from "../apps/common/src/env.js";
 import { markPublished, upsertGeneratedContent } from "../apps/common/src/repository.js";
+import { createSsrApp } from "../apps/ssr/src/server.js";
 import type { GeneratedContentInput, QualityReport } from "../apps/common/src/types.js";
 import { runMigration } from "../db/migrate.js";
 
@@ -67,6 +69,7 @@ describe("SSR data routing contracts", () => {
       fs.unlinkSync(TEST_DB_PATH);
     }
     process.env.SQLITE_DB_PATH = TEST_DB_PATH;
+    process.env.SITE_BASE_URL = "http://localhost:3000";
     await runMigration();
   });
 
@@ -78,15 +81,32 @@ describe("SSR data routing contracts", () => {
     }
   });
 
-  it("allows published article insertion and retrieval seed", async () => {
-    const inserted = await upsertGeneratedContent(sampleInput());
+  it("renders markdown as HTML and strips unsafe tags on detail page", async () => {
+    const inserted = await upsertGeneratedContent(
+      sampleInput({
+        slug: "markdown-article",
+        sourceKey: "markdown-source",
+        contentHash: "markdown-hash",
+        content: "# Heading\n\nParagraph with [link](https://example.com).\n\n<script>alert('xss')</script>",
+      }),
+    );
     await markPublished([inserted.id]);
-    expect(true).toBe(true);
+
+    const app = createSsrApp();
+    const response = await request(app).get("/posts/markdown-article");
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain("<h1>Heading</h1>");
+    expect(response.text).toContain('href="https://example.com"');
+    expect(response.text).toContain("&lt;script&gt;alert");
+    expect(response.text).not.toContain("<p><script>");
   });
 
-  it("can seed more than one published record for pagination", async () => {
+  it("renders published articles on list page", async () => {
+    const publishedIds: number[] = [];
+
     for (let i = 0; i < 12; i += 1) {
-      await upsertGeneratedContent(
+      const inserted = await upsertGeneratedContent(
         sampleInput({
           sourceKey: `published-source-${i}`,
           slug: `visible-article-${i}`,
@@ -94,8 +114,15 @@ describe("SSR data routing contracts", () => {
           title: `Visible Article ${i}`,
         }),
       );
+      publishedIds.push(inserted.id);
     }
 
-    expect(true).toBe(true);
+    await markPublished(publishedIds);
+
+    const app = createSsrApp();
+    const response = await request(app).get("/");
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain("Visible Article 0");
   });
 });

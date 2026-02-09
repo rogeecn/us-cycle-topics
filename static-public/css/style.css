@@ -730,6 +730,9 @@ button:not(:-moz-focusring):focus > .menu__btn-title {
 	font-size: .75rem;
 	line-height: 1;
 	color: #fff;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
 }
 
 .tags__list {
