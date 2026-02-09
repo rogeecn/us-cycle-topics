@@ -160,3 +160,20 @@ export interface ProducerRequest {
   keyword: string;
   language?: string;
 }
+
+export interface SidebarPost {
+  slug: string;
+  title: string;
+  lastmod: Date;
+}
+
+export interface SidebarTermCount {
+  name: string;
+  count: number;
+}
+
+export interface SidebarData {
+  recentPosts: SidebarPost[];
+  categories: SidebarTermCount[];
+  tags: SidebarTermCount[];
+}

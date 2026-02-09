@@ -10,6 +10,7 @@ import {
   acquireProducerTriggerRequest,
   cleanupExpiredProducerTriggerRequests,
   getPublishedArticleBySlug,
+  getSidebarData,
   listPublishedArticles,
   markProducerTriggerRequestFailed,
   markProducerTriggerRequestSucceeded,
@@ -57,6 +58,14 @@ function makeTriggerResponse(status: "accepted" | "deduplicated" | "failed", det
   };
 }
 
+function withSidebarDefaults(sidebarData: Awaited<ReturnType<typeof getSidebarData>>) {
+  return {
+    sidebarRecentPosts: sidebarData.recentPosts,
+    sidebarCategories: sidebarData.categories,
+    sidebarTags: sidebarData.tags,
+  };
+}
+
 export function createSsrApp(): express.Express {
   const env = getEnv();
   const app = express();
@@ -75,7 +84,10 @@ export function createSsrApp(): express.Express {
     const pageSize = 10;
     const offset = (page - 1) * pageSize;
 
-    const articles = await listPublishedArticles(pageSize + 1, offset);
+    const [articles, sidebarData] = await Promise.all([
+      listPublishedArticles(pageSize + 1, offset),
+      getSidebarData(),
+    ]);
     const hasNextPage = articles.length > pageSize;
     const pageItems = hasNextPage ? articles.slice(0, pageSize) : articles;
 
@@ -87,12 +99,16 @@ export function createSsrApp(): express.Express {
       page,
       hasNextPage,
       hasPrevPage: page > 1,
+      ...withSidebarDefaults(sidebarData),
     });
   });
 
   app.get("/posts/:slug", async (req, res) => {
     const slug = String(req.params.slug);
-    const article = await getPublishedArticleBySlug(slug);
+    const [article, sidebarData] = await Promise.all([
+      getPublishedArticleBySlug(slug),
+      getSidebarData(),
+    ]);
 
     if (!article) {
       return res.status(404).render("404", {
@@ -110,6 +126,7 @@ export function createSsrApp(): express.Express {
       canonicalUrl: buildPageUrl(env.SITE_BASE_URL, req.originalUrl),
       article,
       articleHtml,
+      ...withSidebarDefaults(sidebarData),
     });
   });
 

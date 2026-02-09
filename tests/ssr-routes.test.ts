@@ -87,6 +87,8 @@ describe("SSR data routing contracts", () => {
         slug: "markdown-article",
         sourceKey: "markdown-source",
         contentHash: "markdown-hash",
+        city: "Sidebar City",
+        tags: ["sidebar-tag", "safety"],
         content: "# Heading\n\nParagraph with [link](https://example.com).\n\n<script>alert('xss')</script>",
       }),
     );
@@ -100,6 +102,10 @@ describe("SSR data routing contracts", () => {
     expect(response.text).toContain('href="https://example.com"');
     expect(response.text).toContain("&lt;script&gt;alert");
     expect(response.text).not.toContain("<p><script>");
+    expect(response.text).toContain("Recent Posts");
+    expect(response.text).toContain("Sidebar City");
+    expect(response.text).toContain("(1)");
+    expect(response.text).toContain("sidebar-tag");
   });
 
   it("renders published articles on list page", async () => {
@@ -124,5 +130,11 @@ describe("SSR data routing contracts", () => {
 
     expect(response.status).toBe(200);
     expect(response.text).toContain("Visible Article 0");
+    expect(response.text).toContain("Recent Posts");
+    expect(response.text).toContain("Categories");
+    expect(response.text).toContain("Tags");
+    expect(response.text).toContain("City");
+    expect(response.text).toContain("a");
+    expect(response.text).toContain("(12)");
   });
 });

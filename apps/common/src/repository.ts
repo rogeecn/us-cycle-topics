@@ -5,6 +5,9 @@ import {
   PipelineRunRecord,
   RenderMode,
   ReviewStats,
+  SidebarData,
+  SidebarPost,
+  SidebarTermCount,
   StoredContent,
 } from "./types.js";
 
@@ -237,7 +240,7 @@ export async function markArticleFailed(
   db.prepare(
     `UPDATE seo_articles
      SET status = 'failed', last_error = ?
-     WHERE id = ?`
+     WHERE id = ?`,
   ).run(errorMessage, id);
 }
 
@@ -306,6 +309,72 @@ export async function getPublishedArticleBySlug(
   }
 
   return mapRow(row);
+}
+
+export async function getSidebarData(
+  options?: {
+    recentLimit?: number;
+    termLimit?: number;
+  },
+): Promise<SidebarData> {
+  const db = getDb();
+  const recentLimit = options?.recentLimit ?? 8;
+  const termLimit = options?.termLimit ?? 20;
+
+  const recentRows = db
+    .prepare(
+      `SELECT slug, title, lastmod
+       FROM seo_articles
+       WHERE status = 'published'
+       ORDER BY lastmod DESC
+       LIMIT ?`,
+    )
+    .all(recentLimit) as Array<{ slug: string; title: string; lastmod: string }>;
+
+  const categoryRows = db
+    .prepare(
+      `SELECT city AS name, COUNT(*) AS count
+       FROM seo_articles
+       WHERE status = 'published'
+       GROUP BY city
+       ORDER BY count DESC, city ASC
+       LIMIT ?`,
+    )
+    .all(termLimit) as Array<{ name: string; count: number }>;
+
+  const tagRows = db
+    .prepare(
+      `SELECT j.value AS name, COUNT(*) AS count
+       FROM seo_articles AS a,
+            json_each(a.tags) AS j
+       WHERE a.status = 'published'
+       GROUP BY j.value
+       ORDER BY count DESC, j.value ASC
+       LIMIT ?`,
+    )
+    .all(termLimit) as Array<{ name: string; count: number }>;
+
+  const recentPosts: SidebarPost[] = recentRows.map((row) => ({
+    slug: row.slug,
+    title: row.title,
+    lastmod: new Date(row.lastmod),
+  }));
+
+  const categories: SidebarTermCount[] = categoryRows.map((row) => ({
+    name: row.name,
+    count: Number(row.count),
+  }));
+
+  const tags: SidebarTermCount[] = tagRows.map((row) => ({
+    name: row.name,
+    count: Number(row.count),
+  }));
+
+  return {
+    recentPosts,
+    categories,
+    tags,
+  };
 }
 
 export async function getReviewStats(): Promise<ReviewStats> {
@@ -392,7 +461,7 @@ export async function approveNeedsReview(
          last_error = NULL,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?
-       AND status = 'needs_review'`
+       AND status = 'needs_review'`,
   ).run(notes, reviewer, id);
 
   return result.changes > 0;
@@ -414,7 +483,7 @@ export async function rejectNeedsReview(
          last_error = 'manual review rejected',
          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?
-       AND status = 'needs_review'`
+       AND status = 'needs_review'`,
   ).run(notes, reviewer, id);
 
   return result.changes > 0;
@@ -476,7 +545,7 @@ export async function startPipelineRun(
   db.prepare(
     `INSERT INTO pipeline_runs (
       run_id, mode, status, started_at
-    ) VALUES (?, ?, 'running', CURRENT_TIMESTAMP)`
+    ) VALUES (?, ?, 'running', CURRENT_TIMESTAMP)`,
   ).run(runId, mode);
 }
 

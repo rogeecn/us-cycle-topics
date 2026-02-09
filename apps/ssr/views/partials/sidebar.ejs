@@ -3,7 +3,15 @@
 	<h4 class="widget__title">Recent Posts</h4>
 	<div class="widget__content">
 		<ul class="widget__list">
-            <!-- Posts will be listed here -->
+			<% if (sidebarRecentPosts && sidebarRecentPosts.length > 0) { %>
+				<% sidebarRecentPosts.forEach(post => { %>
+					<li class="widget__item">
+						<a class="widget__link" href="/posts/<%= post.slug %>"><%= post.title %></a>
+					</li>
+				<% }) %>
+			<% } else { %>
+				<li class="widget__item">No posts yet</li>
+			<% } %>
 		</ul>
 	</div>
 </div>
@@ -11,14 +19,31 @@
 	<h4 class="widget__title">Categories</h4>
 	<div class="widget__content">
 		<ul class="widget__list">
-            <!-- Categories will be listed here -->
+			<% if (sidebarCategories && sidebarCategories.length > 0) { %>
+				<% sidebarCategories.forEach(category => { %>
+					<li class="widget__item">
+						<span><%= category.name %></span>
+						<span> (<%= category.count %>)</span>
+					</li>
+				<% }) %>
+			<% } else { %>
+				<li class="widget__item">No categories yet</li>
+			<% } %>
 		</ul>
 	</div>
 </div>
 <div class="widget-taglist widget">
 	<h4 class="widget__title">Tags</h4>
 	<div class="widget__content">
-		<!-- Tags will be listed here -->
+		<% if (sidebarTags && sidebarTags.length > 0) { %>
+			<div class="tags">
+				<% sidebarTags.forEach(tag => { %>
+					<span class="tags__link btn"><%= tag.name %> (<%= tag.count %>)</span>
+				<% }) %>
+			</div>
+		<% } else { %>
+			<span>No tags yet</span>
+		<% } %>
 	</div>
 </div>
 </aside>
