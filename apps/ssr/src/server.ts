@@ -2,60 +2,21 @@ import express from "express";
 import expressLayouts from "express-ejs-layouts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { sha256 } from "../../common/src/hash.js";
 import { getEnv } from "../../common/src/env.js";
 import { logger } from "../../common/src/logger.js";
-import { renderMarkdownToSafeHtml } from "./markdown.js";
+import { renderMarkdownToSafeHtml, stripLeadingTitleHeading } from "./markdown.js";
 import {
-  acquireProducerTriggerRequest,
-  cleanupExpiredProducerTriggerRequests,
   getPublishedArticleBySlug,
   getSidebarData,
   listPublishedArticles,
-  markProducerTriggerRequestFailed,
-  markProducerTriggerRequestSucceeded,
+  listPublishedArticlesByCategory,
+  listPublishedArticlesByTag,
 } from "../../common/src/repository.js";
-import { produceArticle } from "../../producer/src/producer.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function buildPageUrl(baseUrl: string, requestPath: string): string {
   return new URL(requestPath, baseUrl).toString();
-}
-
-function parseManualInput(body: unknown): {
-  topic: string;
-  city: string;
-  keyword: string;
-  language?: string;
-} | null {
-  if (!body || typeof body !== "object") {
-    return null;
-  }
-
-  const payload = body as Record<string, unknown>;
-  const topic = typeof payload.topic === "string" ? payload.topic.trim() : "";
-  const city = typeof payload.city === "string" ? payload.city.trim() : "";
-  const keyword = typeof payload.keyword === "string" ? payload.keyword.trim() : "";
-  const language = typeof payload.language === "string" ? payload.language.trim() : undefined;
-
-  if (!topic || !city || !keyword) {
-    return null;
-  }
-
-  return { topic, city, keyword, language };
-}
-
-function makeTriggerResponse(status: "accepted" | "deduplicated" | "failed", detail: string): {
-  status: "accepted" | "deduplicated" | "failed";
-  detail: string;
-  at: string;
-} {
-  return {
-    status,
-    detail,
-    at: new Date().toISOString(),
-  };
 }
 
 function withSidebarDefaults(sidebarData: Awaited<ReturnType<typeof getSidebarData>>) {
@@ -70,7 +31,6 @@ export function createSsrApp(): express.Express {
   const env = getEnv();
   const app = express();
 
-  app.use(express.json({ limit: "1mb" }));
   app.use(expressLayouts);
   app.set("view engine", "ejs");
   app.set("views", path.join(__dirname, "../views"));
@@ -118,7 +78,8 @@ export function createSsrApp(): express.Express {
       });
     }
 
-    const articleHtml = renderMarkdownToSafeHtml(article.content);
+    const articleMarkdown = stripLeadingTitleHeading(article.content, article.title);
+    const articleHtml = renderMarkdownToSafeHtml(articleMarkdown);
 
     return res.render("single", {
       title: article.title,
@@ -130,56 +91,58 @@ export function createSsrApp(): express.Express {
     });
   });
 
-  app.post("/api/producer/run", async (req, res) => {
-    const authHeader = req.header("authorization");
-    const expectedAuth = `Bearer ${env.PRODUCER_API_TOKEN}`;
+  app.get("/categories/:name", async (req, res) => {
+    const categoryName = decodeURIComponent(String(req.params.name));
+    const pageParam = Number(req.query.page ?? "1");
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
+    const pageSize = 10;
+    const offset = (page - 1) * pageSize;
 
-    if (authHeader !== expectedAuth) {
-      return res.status(401).json({ error: "unauthorized" });
-    }
+    const [articles, sidebarData] = await Promise.all([
+      listPublishedArticlesByCategory(categoryName, pageSize + 1, offset),
+      getSidebarData(),
+    ]);
 
-    const idempotencyKey = req.header("x-idempotency-key");
-    if (!idempotencyKey || idempotencyKey.trim() === "") {
-      return res.status(400).json({ error: "missing x-idempotency-key" });
-    }
+    const hasNextPage = articles.length > pageSize;
+    const pageItems = hasNextPage ? articles.slice(0, pageSize) : articles;
 
-    await cleanupExpiredProducerTriggerRequests(env.PRODUCER_REQUEST_IDEMPOTENCY_TTL_SECONDS);
+    return res.render("index", {
+      title: `Category: ${categoryName}`,
+      description: `Articles in category ${categoryName}`,
+      canonicalUrl: buildPageUrl(env.SITE_BASE_URL, req.originalUrl),
+      articles: pageItems,
+      page,
+      hasNextPage,
+      hasPrevPage: page > 1,
+      ...withSidebarDefaults(sidebarData),
+    });
+  });
 
-    const manualInput = parseManualInput(req.body);
-    if (!manualInput) {
-      return res.status(400).json({
-        error: "invalid payload: topic/city/keyword are required strings",
-      });
-    }
+  app.get("/tags/:name", async (req, res) => {
+    const tagName = decodeURIComponent(String(req.params.name));
+    const pageParam = Number(req.query.page ?? "1");
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
+    const pageSize = 10;
+    const offset = (page - 1) * pageSize;
 
-    const requestHash = sha256(JSON.stringify(manualInput));
-    const acquired = await acquireProducerTriggerRequest(idempotencyKey, requestHash);
-    if (!acquired.acquired) {
-      const existingPayload = acquired.responseJson
-        ? JSON.parse(acquired.responseJson)
-        : makeTriggerResponse("deduplicated", "existing request in progress or completed");
-      return res.status(200).json(existingPayload);
-    }
+    const [articles, sidebarData] = await Promise.all([
+      listPublishedArticlesByTag(tagName, pageSize + 1, offset),
+      getSidebarData(),
+    ]);
 
-    try {
-      await produceArticle(manualInput);
-      const responsePayload = makeTriggerResponse("accepted", "producer completed");
-      await markProducerTriggerRequestSucceeded(
-        idempotencyKey,
-        JSON.stringify(responsePayload),
-      );
-      return res.status(200).json(responsePayload);
-    } catch (error) {
-      const responsePayload = makeTriggerResponse(
-        "failed",
-        error instanceof Error ? error.message : String(error),
-      );
-      await markProducerTriggerRequestFailed(
-        idempotencyKey,
-        JSON.stringify(responsePayload),
-      );
-      return res.status(500).json(responsePayload);
-    }
+    const hasNextPage = articles.length > pageSize;
+    const pageItems = hasNextPage ? articles.slice(0, pageSize) : articles;
+
+    return res.render("index", {
+      title: `Tag: ${tagName}`,
+      description: `Articles tagged with ${tagName}`,
+      canonicalUrl: buildPageUrl(env.SITE_BASE_URL, req.originalUrl),
+      articles: pageItems,
+      page,
+      hasNextPage,
+      hasPrevPage: page > 1,
+      ...withSidebarDefaults(sidebarData),
+    });
   });
 
   return app;
