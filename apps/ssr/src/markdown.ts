@@ -48,6 +48,28 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   },
 };
 
+function normalizeHeadingTitle(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\s+#+\s*$/, "")
+    .toLowerCase();
+}
+
+export function stripLeadingTitleHeading(markdownSource: string, title: string): string {
+  const match = markdownSource.match(/^(\s*#\s+(.+?)\s*)\n+/);
+  if (!match) {
+    return markdownSource;
+  }
+
+  const headingText = match[2] ?? "";
+  if (normalizeHeadingTitle(headingText) !== normalizeHeadingTitle(title)) {
+    return markdownSource;
+  }
+
+  return markdownSource.slice(match[0].length);
+}
+
 export function renderMarkdownToSafeHtml(markdownSource: string): string {
   const rendered = markdown.render(markdownSource);
   return sanitizeHtml(rendered, SANITIZE_OPTIONS);
