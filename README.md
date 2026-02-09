@@ -22,7 +22,7 @@
 
 3. **SSR Web** (`apps/ssr`)
    - 服务端渲染首页/详情页
-   - 静态资源目录由 `STATIC_PUBLIC_DIR` 提供（默认 `./hugo-site/public`）
+   - 静态资源目录由 `STATIC_PUBLIC_DIR` 提供（默认 `./static-public`）
    - 暴露 `POST /api/producer/run`
 
 4. **Scheduler** (`apps/scheduler`)
@@ -43,7 +43,7 @@ apps/
 db/
   migrations/
 docs/
-hugo-site/        # 仅保留 Mainroad 样式静态资源
+static-public/    # Mainroad 样式静态资源
 scripts/
 ```
 
@@ -69,6 +69,18 @@ npm run ssr
 ```
 
 默认访问：`http://localhost:3000`
+
+### Docker Compose 启动
+
+```bash
+docker compose up --build
+```
+
+首次或手动迁移：
+
+```bash
+docker compose run --rm migrate
+```
 
 ---
 
@@ -102,6 +114,12 @@ npm run pipeline -- --mode=incremental
 npm run pipeline -- --mode=full
 npm run scheduler
 ```
+
+说明：
+- `seed:sample`：开发/测试造数用，生产通常不用。
+- `pipeline`：单次手动补跑（增量/全量）用，仍有价值。
+- `scheduler`：生产定时任务主入口，必须保留。
+- `preflight`：启动前健康检查，建议保留。
 
 ---
 
@@ -222,4 +240,4 @@ npm run migrate
 
 ## 11. 说明
 
-`hugo-site/public` 仅作为 Mainroad 静态样式资源目录使用，不承载 Hugo 构建流程。
+`static-public` 仅作为 Mainroad 静态样式资源目录使用，不承载 Hugo 构建流程。

@@ -99,7 +99,7 @@
 
 ### 5.2 静态资产
 - Mainroad 样式仅作为静态资源提供。
-- 静态资源目录通过 `STATIC_PUBLIC_DIR` 配置。
+- 静态资源目录通过 `STATIC_PUBLIC_DIR` 配置（默认 `./static-public`）。
 - 预检必须校验关键资源可读（如 `css/style.css`、`js/menu.js`）。
 
 ### 5.3 禁止项

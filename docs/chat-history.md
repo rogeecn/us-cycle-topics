@@ -41,7 +41,7 @@ source: "基于已落地代码与确认需求重写"
 ### 3) SSR（渲染层）
 - 首页、列表、详情页由 Node SSR 提供。
 - SEO 基础字段输出：title/description/canonical。
-- 静态资产从 `STATIC_PUBLIC_DIR` 读取（默认 `./hugo-site/public`）。
+- 静态资产从 `STATIC_PUBLIC_DIR` 读取（默认 `./static-public`）。
 
 ### 4) Scheduler（编排层）
 - 增量/全量扫描可发布内容。

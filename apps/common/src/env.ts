@@ -47,7 +47,7 @@ const EnvSchema = z.object({
   QUALITY_SOFT_REVIEW_THRESHOLD: z.coerce.number().min(0).max(100).default(60),
   PRODUCER_MAX_REVISIONS: z.coerce.number().int().min(0).max(5).default(2),
   NEEDS_REVIEW_ALERT_THRESHOLD: z.coerce.number().int().min(1).default(20),
-  STATIC_PUBLIC_DIR: z.string().default("./hugo-site/public"),
+  STATIC_PUBLIC_DIR: z.string().default("./static-public"),
   SCHEDULER_CRON: z.string().default("0 * * * *"),
   PREFLIGHT_ON_RUN: booleanFlag(true),
   ALERT_WEBHOOK_URL: z.string().optional(),

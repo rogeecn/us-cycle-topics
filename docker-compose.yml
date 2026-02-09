@@ -1,21 +1,71 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: us-cycle-topics-pg
-    restart: unless-stopped
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: us-cycle-topics:latest
+    container_name: us-cycle-topics-migrate
+    command: ["npm", "run", "bootstrap"]
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: us_cycle_topics
-    ports:
-      - "5432:5432"
+      NODE_ENV: production
+      SQLITE_DB_PATH: /data/us-cycle-topics.db
+      STATIC_PUBLIC_DIR: /app/static-public
+      SITE_BASE_URL: http://localhost:3000
+      PREFLIGHT_ON_RUN: "true"
+      PRODUCER_API_TOKEN: ${PRODUCER_API_TOKEN:-dev-producer-token}
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d us_cycle_topics"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
+      - sqlite_data:/data
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: us-cycle-topics:latest
+    container_name: us-cycle-topics-web
+    restart: unless-stopped
+    init: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      SQLITE_DB_PATH: /data/us-cycle-topics.db
+      STATIC_PUBLIC_DIR: /app/static-public
+      SITE_BASE_URL: http://localhost:3000
+      PREFLIGHT_ON_RUN: "true"
+      SCHEDULER_CRON: "0 * * * *"
+      PRODUCER_API_TOKEN: ${PRODUCER_API_TOKEN:-dev-producer-token}
+    ports:
+      - "3000:3000"
+    volumes:
+      - sqlite_data:/data
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: us-cycle-topics:latest
+    container_name: us-cycle-topics-scheduler
+    restart: unless-stopped
+    init: true
+    command: ["npm", "run", "scheduler"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      web:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      SQLITE_DB_PATH: /data/us-cycle-topics.db
+      STATIC_PUBLIC_DIR: /app/static-public
+      SITE_BASE_URL: http://localhost:3000
+      PREFLIGHT_ON_RUN: "true"
+      SCHEDULER_CRON: "0 * * * *"
+      PRODUCER_API_TOKEN: ${PRODUCER_API_TOKEN:-dev-producer-token}
+    volumes:
+      - sqlite_data:/data
 
 volumes:
-  pgdata:
+  sqlite_data:
