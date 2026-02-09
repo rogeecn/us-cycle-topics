@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { sha256 } from "../../common/src/hash.js";
 import { getEnv } from "../../common/src/env.js";
 import { logger } from "../../common/src/logger.js";
+import { renderMarkdownToSafeHtml } from "./markdown.js";
 import {
   acquireProducerTriggerRequest,
   cleanupExpiredProducerTriggerRequests,
@@ -101,11 +102,14 @@ export function createSsrApp(): express.Express {
       });
     }
 
+    const articleHtml = renderMarkdownToSafeHtml(article.content);
+
     return res.render("single", {
       title: article.title,
       description: article.description,
       canonicalUrl: buildPageUrl(env.SITE_BASE_URL, req.originalUrl),
       article,
+      articleHtml,
     });
   });
 
