@@ -16,7 +16,7 @@ theme = "mainroad"
   authorbox = true
   pager = true
   toc = true
-  post_meta = ["date", "categories", "tags"]
+  post_meta = ["date", "categories"]
   mainSections = ["posts", "post", "docs"]
   dateformat = "2006-01-02"
 
