@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { runMigration } from "../../../db/migrate.js";
 import { getEnv } from "../../common/src/env.js";
 import { logger } from "../../common/src/logger.js";
 import {
@@ -44,6 +45,7 @@ export async function runPipeline(mode: RenderMode): Promise<void> {
     logger.info("pipeline started", { runId, mode });
 
     if (env.PREFLIGHT_ON_RUN) {
+      await runMigration();
       await runPreflight();
     }
 

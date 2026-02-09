@@ -1,3 +1,4 @@
+import { runMigration } from "../../../db/migrate.js";
 import { runPipeline } from "./pipeline.js";
 import { emitDailySummary } from "./alerts.js";
 import { getEnv } from "../../common/src/env.js";
@@ -18,6 +19,7 @@ function shouldDailySummary(): boolean {
 
 async function main(): Promise<void> {
   const mode = parseMode();
+  await runMigration();
   await runPipeline(mode);
 
   if (shouldDailySummary()) {

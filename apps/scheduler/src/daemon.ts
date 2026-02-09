@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { runMigration } from "../../../db/migrate.js";
 import { runPipeline } from "./pipeline.js";
 import { emitDailySummary } from "./alerts.js";
 import { getEnv } from "../../common/src/env.js";
@@ -21,6 +22,8 @@ function scheduleDailySummary(env: ReturnType<typeof getEnv>): void {
 
 async function main(): Promise<void> {
   const env = getEnv();
+
+  await runMigration();
 
   logger.info("scheduler started", {
     cron: env.SCHEDULER_CRON,

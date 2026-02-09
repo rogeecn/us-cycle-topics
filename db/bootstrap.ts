@@ -8,12 +8,12 @@ async function main(): Promise<void> {
   const env = getEnv();
 
   await withRetry(
-    "pg-bootstrap",
+    "db-bootstrap",
     env.PG_BOOTSTRAP_MAX_ATTEMPTS,
     env.PG_BOOTSTRAP_BACKOFF_MS,
     async () => {
-      await runPreflight();
       await runMigration();
+      await runPreflight();
     },
   );
 
