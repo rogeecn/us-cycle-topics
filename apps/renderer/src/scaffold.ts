@@ -11,6 +11,11 @@ theme = "mainroad"
   category = "categories"
   tag = "tags"
 
+[Params.Author]
+  name = "LocalProof Editorial Team"
+  bio = "People-first local operations and recycling guidance. Verify locally before action."
+  avatar = "img/avatar.png"
+
 [Params]
   description = "People-first local operations and recycling guides with practical verification steps."
   opengraph = true
