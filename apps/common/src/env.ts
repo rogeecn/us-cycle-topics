@@ -43,6 +43,7 @@ const EnvSchema = z.object({
   PRODUCER_PROMPT_NAME: z.string().default("seo-article"),
   QUALITY_MIN_SCORE: z.coerce.number().min(0).max(100).default(70),
   PRODUCER_MAX_REVISIONS: z.coerce.number().int().min(0).max(5).default(2),
+  PRODUCER_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
   STATIC_PUBLIC_DIR: z.string().default("./static-public"),
   SCHEDULER_CRON: z.string().default("0 * * * *"),
   PREFLIGHT_ON_RUN: booleanFlag(true),

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { ai } from "./genkit.js";
 import { z } from "genkit";
 import {
@@ -21,24 +22,12 @@ function buildSourceKey(request: ProducerRequest): string {
   return `${request.city}::${request.topic}::${request.keyword}`.toLowerCase();
 }
 
-function resolvePostQualityStatus(
-  qualityReport: QualityReport,
-  minScore: number,
-): {
-  statusAfterQuality: "generated" | "failed";
-  lastError: string | null;
-} {
-  if (qualityReport.hardFailureCount === 0 && qualityReport.scoreTotal >= minScore) {
-    return {
-      statusAfterQuality: "generated",
-      lastError: null,
-    };
-  }
+function normalizeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
-  return {
-    statusAfterQuality: "failed",
-    lastError: "quality validation failed",
-  };
+function isQualityPassed(qualityReport: QualityReport, minScore: number): boolean {
+  return qualityReport.hardFailureCount === 0 && qualityReport.scoreTotal >= minScore;
 }
 
 function evaluateArticle(article: ArticleOutput): QualityReport {
@@ -94,6 +83,10 @@ async function reviseArticleWithFailures(
 
 export async function produceArticle(request: ProducerRequest): Promise<void> {
   const env = getEnv();
+  const runId = randomUUID();
+  const sourceKey = buildSourceKey(request);
+  const maxAttempts = env.PRODUCER_MAX_ATTEMPTS;
+
   const outlinePrompt = ai.prompt<z.ZodTypeAny, typeof ArticleOutlineSchema, z.ZodTypeAny>(
     env.PRODUCER_OUTLINE_PROMPT_NAME,
   );
@@ -101,162 +94,260 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
     env.PRODUCER_PROMPT_NAME,
   );
 
-  const commonInput = {
+  logger.info("producer run started", {
+    runId,
+    sourceKey,
     topic: request.topic,
     city: request.city,
     keyword: request.keyword,
     language: request.language ?? "en",
-    promptVersion: env.GENKIT_PROMPT_VERSION,
-    nowIso: new Date().toISOString(),
-  };
-
-  const { output: outlineOutput } = await outlinePrompt(commonInput, {
-    output: {
-      schema: ArticleOutlineSchema,
-    },
+    maxAttempts,
+    maxRevisionsPerAttempt: env.PRODUCER_MAX_REVISIONS,
+    qualityMinScore: env.QUALITY_MIN_SCORE,
   });
 
-  if (!outlineOutput) {
-    throw new Error("Genkit returned empty outline output");
-  }
+  let lastFailureMessage: string | null = null;
+  let lastFailureCodes: string[] = [];
+  let lastQualityScore: number | null = null;
 
-  const outline: ArticleOutline = ArticleOutlineSchema.parse(outlineOutput);
-
-  const { output: articleOutput } = await articlePrompt(
-    {
-      ...commonInput,
-      outlineJson: JSON.stringify(outline),
-    },
-    {
-      output: {
-        schema: ArticleOutputSchema,
-      },
-    },
-  );
-
-  if (!articleOutput) {
-    throw new Error("Genkit returned empty article output");
-  }
-
-  let article: ArticleOutput = ArticleOutputSchema.parse(articleOutput);
-  let qualityReport = evaluateArticle(article);
-
-  for (let attempt = 1; attempt <= env.PRODUCER_MAX_REVISIONS; attempt += 1) {
-    if (qualityReport.hardFailureCount === 0 && qualityReport.scoreTotal >= env.QUALITY_MIN_SCORE) {
-      break;
-    }
-
-    if (qualityReport.hardFailureCount > 0) {
-      break;
-    }
-
-    article = await reviseArticleWithFailures(
-      article,
-      qualityReport,
-      commonInput.language,
-    );
-    qualityReport = evaluateArticle(article);
-
-    logger.info("producer auto-revision attempt completed", {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    logger.info("producer attempt started", {
+      runId,
+      sourceKey,
       attempt,
-      scoreTotal: qualityReport.scoreTotal,
-      hardFailureCount: qualityReport.hardFailureCount,
-      softFailureCount: qualityReport.softFailureCount,
-    });
-  }
-
-  const qualityDecision = resolvePostQualityStatus(
-    qualityReport,
-    env.QUALITY_MIN_SCORE,
-  );
-
-  const contentHash = sha256(`${article.title}\n${article.description}\n${article.content}`);
-
-  const duplicate = await findByContentHash(contentHash);
-  if (duplicate && duplicate.sourceKey !== buildSourceKey(request)) {
-    logger.warn("duplicate content hash detected, routed to failed", {
-      duplicateId: duplicate.id,
-      duplicateSourceKey: duplicate.sourceKey,
-      currentSourceKey: buildSourceKey(request),
-      hash: contentHash,
+      maxAttempts,
     });
 
-    const duplicateRecord = await upsertGeneratedContent({
-      sourceKey: buildSourceKey(request),
-      topic: request.topic,
-      city: request.city,
-      keyword: request.keyword,
-      title: article.title,
-      description: article.description,
-      slug: article.slug,
-      tags: article.tags,
-      content: article.content,
-      lastmod: new Date(article.lastmod),
-      promptVersion: env.GENKIT_PROMPT_VERSION,
-      modelVersion: "prompt-managed",
-      rawJson: {
-        outline,
-        article,
+    try {
+      const commonInput = {
+        topic: request.topic,
+        city: request.city,
+        keyword: request.keyword,
+        language: request.language ?? "en",
+        promptVersion: env.GENKIT_PROMPT_VERSION,
+        nowIso: new Date().toISOString(),
+      };
+
+      logger.info("producer phase start", {
+        runId,
+        sourceKey,
+        attempt,
+        phase: "outline_generation",
+      });
+
+      const { output: outlineOutput } = await outlinePrompt(commonInput, {
+        output: {
+          schema: ArticleOutlineSchema,
+        },
+      });
+
+      if (!outlineOutput) {
+        throw new Error("Genkit returned empty outline output");
+      }
+
+      const outline: ArticleOutline = ArticleOutlineSchema.parse(outlineOutput);
+
+      logger.info("producer phase completed", {
+        runId,
+        sourceKey,
+        attempt,
+        phase: "outline_generation",
+        sectionCount: outline.sectionPlan.length,
+        takeawaysCount: outline.keyTakeaways.length,
+      });
+
+      logger.info("producer phase start", {
+        runId,
+        sourceKey,
+        attempt,
+        phase: "article_generation",
+      });
+
+      const { output: articleOutput } = await articlePrompt(
+        {
+          ...commonInput,
+          outlineJson: JSON.stringify(outline),
+        },
+        {
+          output: {
+            schema: ArticleOutputSchema,
+          },
+        },
+      );
+
+      if (!articleOutput) {
+        throw new Error("Genkit returned empty article output");
+      }
+
+      let article: ArticleOutput = ArticleOutputSchema.parse(articleOutput);
+
+      logger.info("producer phase completed", {
+        runId,
+        sourceKey,
+        attempt,
+        phase: "article_generation",
+        slug: article.slug,
+        tagsCount: article.tags.length,
+      });
+
+      let qualityReport = evaluateArticle(article);
+      logger.info("producer quality evaluated", {
+        runId,
+        sourceKey,
+        attempt,
+        revisionAttempt: 0,
+        scoreTotal: qualityReport.scoreTotal,
+        hardFailureCount: qualityReport.hardFailureCount,
+        softFailureCount: qualityReport.softFailureCount,
+        failureCodes: qualityReport.failureCodes,
+        passed: isQualityPassed(qualityReport, env.QUALITY_MIN_SCORE),
+      });
+
+      for (let revisionAttempt = 1; revisionAttempt <= env.PRODUCER_MAX_REVISIONS; revisionAttempt += 1) {
+        if (isQualityPassed(qualityReport, env.QUALITY_MIN_SCORE)) {
+          break;
+        }
+
+        logger.info("producer revision started", {
+          runId,
+          sourceKey,
+          attempt,
+          revisionAttempt,
+          failureCodes: qualityReport.failureCodes,
+        });
+
+        article = await reviseArticleWithFailures(
+          article,
+          qualityReport,
+          commonInput.language,
+        );
+        qualityReport = evaluateArticle(article);
+
+        logger.info("producer revision completed", {
+          runId,
+          sourceKey,
+          attempt,
+          revisionAttempt,
+          scoreTotal: qualityReport.scoreTotal,
+          hardFailureCount: qualityReport.hardFailureCount,
+          softFailureCount: qualityReport.softFailureCount,
+          failureCodes: qualityReport.failureCodes,
+          passed: isQualityPassed(qualityReport, env.QUALITY_MIN_SCORE),
+        });
+      }
+
+      if (!isQualityPassed(qualityReport, env.QUALITY_MIN_SCORE)) {
+        lastFailureMessage = "quality validation failed";
+        lastFailureCodes = qualityReport.failureCodes;
+        lastQualityScore = qualityReport.scoreTotal;
+
+        logger.warn("producer attempt failed quality gate, retrying", {
+          runId,
+          sourceKey,
+          attempt,
+          maxAttempts,
+          scoreTotal: qualityReport.scoreTotal,
+          hardFailureCount: qualityReport.hardFailureCount,
+          softFailureCount: qualityReport.softFailureCount,
+          failureCodes: qualityReport.failureCodes,
+        });
+        continue;
+      }
+
+      const contentHash = sha256(`${article.title}\n${article.description}\n${article.content}`);
+      const duplicate = await findByContentHash(contentHash);
+      if (duplicate && duplicate.sourceKey !== sourceKey) {
+        lastFailureMessage = "duplicate content hash detected";
+        lastFailureCodes = [];
+        lastQualityScore = qualityReport.scoreTotal;
+
+        logger.warn("producer attempt hit duplicate hash, retrying", {
+          runId,
+          sourceKey,
+          attempt,
+          maxAttempts,
+          duplicateId: duplicate.id,
+          duplicateSourceKey: duplicate.sourceKey,
+          hash: contentHash,
+        });
+        continue;
+      }
+
+      const record = await upsertGeneratedContent({
+        sourceKey,
+        topic: request.topic,
+        city: request.city,
+        keyword: request.keyword,
+        title: article.title,
+        description: article.description,
+        slug: article.slug,
+        tags: article.tags,
+        content: article.content,
+        lastmod: new Date(article.lastmod),
+        promptVersion: env.GENKIT_PROMPT_VERSION,
+        modelVersion: "prompt-managed",
+        rawJson: {
+          runId,
+          attempt,
+          maxAttempts,
+          outline,
+          article,
+          qualityReport,
+        },
         qualityReport,
-      },
-      qualityReport,
-      contentHash,
-      statusAfterQuality: "failed",
-      lastError: "duplicate content hash detected",
-    });
+        contentHash,
+        statusAfterQuality: "generated",
+        lastError: null,
+      });
 
-    logger.info("producer stored article", {
-      id: duplicateRecord.id,
-      sourceKey: duplicateRecord.sourceKey,
-      slug: duplicateRecord.slug,
-      status: duplicateRecord.status,
-      qualityPassed: duplicateRecord.qualityReport.passed,
-      qualityScore: duplicateRecord.qualityReport.scoreTotal,
-      hardFailureCount: duplicateRecord.qualityReport.hardFailureCount,
-      softFailureCount: duplicateRecord.qualityReport.softFailureCount,
-      lastError: duplicateRecord.lastError,
-    });
+      await markPublished([record.id]);
 
-    return;
+      logger.info("producer stored article", {
+        runId,
+        sourceKey: record.sourceKey,
+        id: record.id,
+        slug: record.slug,
+        status: "published",
+        qualityPassed: record.qualityReport.passed,
+        qualityScore: record.qualityReport.scoreTotal,
+        hardFailureCount: record.qualityReport.hardFailureCount,
+        softFailureCount: record.qualityReport.softFailureCount,
+        failureCodes: record.qualityReport.failureCodes,
+        attemptsUsed: attempt,
+      });
+
+      logger.info("producer run completed", {
+        runId,
+        sourceKey,
+        attemptsUsed: attempt,
+        maxAttempts,
+      });
+
+      return;
+    } catch (error) {
+      lastFailureMessage = normalizeError(error);
+      lastFailureCodes = [];
+
+      logger.warn("producer attempt errored, retrying", {
+        runId,
+        sourceKey,
+        attempt,
+        maxAttempts,
+        message: lastFailureMessage,
+      });
+    }
   }
 
-  const record = await upsertGeneratedContent({
-    sourceKey: buildSourceKey(request),
-    topic: request.topic,
-    city: request.city,
-    keyword: request.keyword,
-    title: article.title,
-    description: article.description,
-    slug: article.slug,
-    tags: article.tags,
-    content: article.content,
-    lastmod: new Date(article.lastmod),
-    promptVersion: env.GENKIT_PROMPT_VERSION,
-    modelVersion: "prompt-managed",
-    rawJson: {
-      outline,
-      article,
-      qualityReport,
-    },
-    qualityReport,
-    contentHash,
-    statusAfterQuality: qualityDecision.statusAfterQuality,
-    lastError: qualityDecision.lastError,
+  logger.error("producer run exhausted retries", {
+    runId,
+    sourceKey,
+    maxAttempts,
+    lastFailureMessage,
+    lastFailureCodes,
+    lastQualityScore,
   });
 
-  if (record.status === "generated") {
-    await markPublished([record.id]);
-  }
-
-  logger.info("producer stored article", {
-    id: record.id,
-    sourceKey: record.sourceKey,
-    slug: record.slug,
-    status: record.status === "generated" ? "published" : record.status,
-    qualityPassed: record.qualityReport.passed,
-    qualityScore: record.qualityReport.scoreTotal,
-    hardFailureCount: record.qualityReport.hardFailureCount,
-    softFailureCount: record.qualityReport.softFailureCount,
-    lastError: record.lastError,
-  });
+  throw new Error(
+    `producer failed after ${maxAttempts} attempts: ${lastFailureMessage ?? "unknown reason"}`,
+  );
 }
