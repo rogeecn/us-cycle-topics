@@ -2,8 +2,6 @@ import { getDb, withTransaction } from "./db.js";
 import { getEnv } from "./env.js";
 import {
   GeneratedContentInput,
-  PipelineRunRecord,
-  RenderMode,
   SidebarData,
   SidebarPost,
   SidebarTermCount,
@@ -163,30 +161,6 @@ export async function upsertGeneratedContent(
   }
 
   return mapRow(row);
-}
-
-export async function listReadyForPublication(
-  mode: RenderMode,
-  minScore: number,
-  batchSize: number,
-): Promise<StoredContent[]> {
-  const db = getDb();
-  const whereClause =
-    mode === "full" ? "status IN ('generated', 'published')" : "status = 'generated'";
-
-  const rows = db
-    .prepare(
-      `SELECT *
-       FROM seo_articles
-       WHERE ${whereClause}
-         AND json_extract(quality_report, '$.passed') = 1
-         AND COALESCE(json_extract(quality_report, '$.scoreTotal'), 0) >= ?
-       ORDER BY updated_at ASC, id ASC
-       LIMIT ?`,
-    )
-    .all(minScore, batchSize) as ArticleRow[];
-
-  return rows.map((row) => mapRow(row));
 }
 
 export async function markPublished(ids: number[]): Promise<void> {
@@ -366,7 +340,7 @@ export async function getSidebarData(
   };
 }
 
-export async function getReviewStats(): Promise<{
+export async function getQualityStats(): Promise<{
   total: number;
   generated: number;
   published: number;
@@ -470,40 +444,6 @@ export async function releasePipelineLock(
     .prepare("DELETE FROM pipeline_locks WHERE lock_key = ? AND owner_token = ?")
     .run(key, ownerToken);
   lockOwnership.delete(key);
-}
-
-export async function startPipelineRun(
-  runId: string,
-  mode: RenderMode,
-): Promise<void> {
-  const db = getDb();
-  db.prepare(
-    `INSERT INTO pipeline_runs (
-      run_id, mode, status, started_at
-    ) VALUES (?, ?, 'running', CURRENT_TIMESTAMP)`,
-  ).run(runId, mode);
-}
-
-export async function finishPipelineRun(
-  record: PipelineRunRecord,
-): Promise<void> {
-  const db = getDb();
-  db.prepare(
-    `UPDATE pipeline_runs
-      SET status = ?,
-          published_count = ?,
-          failed_count = ?,
-          error_message = ?,
-          ended_at = ?
-      WHERE run_id = ?`,
-  ).run(
-    record.status,
-    record.publishedCount,
-    record.failedCount,
-    record.errorMessage,
-    record.endedAt.toISOString(),
-    record.runId,
-  );
 }
 
 export async function listFailedSince(startedAt: Date): Promise<StoredContent[]> {

@@ -44,8 +44,8 @@ source: "基于已落地代码与确认需求重写"
 - 静态资产从 `STATIC_PUBLIC_DIR` 读取（默认 `./static-public`）。
 
 ### 4) Scheduler（编排层）
-- 增量/全量扫描可发布内容。
-- 根据质量阈值推进状态到 `published`。
+- 定时触发 Producer 自动生成内容。
+- 复用质量门禁与发布流程，成功后直接推进 `published`。
 - 内置任务锁、重试、告警与审计日志。
 
 ---
@@ -62,8 +62,7 @@ source: "基于已落地代码与确认需求重写"
   - `prompt_version / model_version / raw_json`
 
 配套表：
-- `pipeline_runs`（调度审计）
-- `pipeline_locks`（并发锁）
+- `pipeline_locks`（调度并发锁）
 - `alert_logs`（告警记录）
 - `producer_trigger_requests`（API 幂等）
 
@@ -72,9 +71,9 @@ source: "基于已落地代码与确认需求重写"
 ## 四、任务流（当前）
 
 ### 增量流（默认）
-1. Producer 生成并写入 SQLite（`generated` / `failed`）。
-2. Scheduler 按质量阈值筛选可发布记录。
-3. 推进为 `published`。
+1. Scheduler 定时触发 Producer。
+2. Producer 生成并写入 SQLite（`generated` / `failed`）。
+3. Producer 成功记录直接推进为 `published`。
 4. SSR 页面对外可见。
 
 ### 全量流（重处理）

@@ -25,8 +25,7 @@
    - 静态资源目录由 `STATIC_PUBLIC_DIR` 提供（默认 `./static-public`）
 
 4. **Scheduler** (`apps/scheduler`)
-   - 定时执行 pipeline
-   - 按质量阈值筛选并推进状态为 `published`
+   - 定时触发 Producer 自动生成并发布内容
    - 任务锁、告警、预检
 
 ---
@@ -114,8 +113,8 @@ npm run scheduler
 
 说明：
 - `seed:sample`：开发/测试造数用，生产通常不用。
-- 发布改为 producer 成功后直接推进 `published`，不再需要手工执行 `pipeline` 命令。
-- `scheduler`：生产定时任务主入口，负责补偿扫描、告警和健康运维。
+- 发布由 producer 成功后直接推进 `published`。
+- `scheduler`：生产定时任务主入口，定时触发 producer 并负责告警和健康运维。
 - `preflight`：启动前健康检查，建议保留。
 
 ---
@@ -157,7 +156,7 @@ npm run scheduler
 ## 8. 状态语义
 
 - 内容生产后进入：`generated / failed`
-- Pipeline 负责将满足质量阈值的内容推进为 `published`
+- Producer 成功后会直接推进为 `published`
 - `published` 为 SSR 对外可见状态
 
 ---

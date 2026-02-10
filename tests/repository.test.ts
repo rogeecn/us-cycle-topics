@@ -5,7 +5,6 @@ import { resetEnvForTests } from "../apps/common/src/env.js";
 import {
   acquirePipelineLock,
   findByContentHash,
-  listReadyForPublication,
   markPublished,
   upsertGeneratedContent,
 } from "../apps/common/src/repository.js";
@@ -91,14 +90,6 @@ describe("Repository State Transitions", () => {
 
     const found = await findByContentHash("hash123");
     expect(found?.id).toBe(created.id);
-  });
-
-  it("selects generated records ready for publication", async () => {
-    await upsertGeneratedContent(sampleInput());
-    const ready = await listReadyForPublication("incremental", 70, 10);
-
-    expect(ready.length).toBe(1);
-    expect(ready[0].status).toBe("generated");
   });
 
   it("marks published state", async () => {

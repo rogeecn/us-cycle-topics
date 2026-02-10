@@ -47,22 +47,6 @@ export interface GeneratedContentInput {
   lastError?: string | null;
 }
 
-export interface PipelineRunStats {
-  publishedCount: number;
-  failedCount: number;
-}
-
-export interface PipelineRunRecord extends PipelineRunStats {
-  runId: string;
-  mode: RenderMode;
-  status: "success" | "failed";
-  errorMessage: string | null;
-  startedAt: Date;
-  endedAt: Date;
-}
-
-export type RenderMode = "incremental" | "full";
-
 export interface RenderedResult {
   renderedIds: number[];
   writtenFiles: string[];
@@ -122,7 +106,7 @@ export interface QualityInput {
   evidenceNotes: string[];
 }
 
-export interface ReviewStats {
+export interface QualityStats {
   total: number;
   generated: number;
   published: number;
