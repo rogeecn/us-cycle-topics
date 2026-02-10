@@ -116,6 +116,7 @@ npm run scheduler
 - 发布由 producer 成功后直接推进 `published`。
 - `scheduler`：生产定时任务主入口，定时触发 producer 并负责告警和健康运维。
 - `preflight`：启动前健康检查，建议保留。
+- 配置 `GOOGLE_ANALYTICS_ID` 与 `GOOGLE_ADSENSE_CLIENT_ID` 后，SSR 全站页面会在 `<head>` 中各注入一次对应脚本。
 
 ---
 
@@ -127,6 +128,10 @@ npm run scheduler
 - `SQLITE_DB_PATH`
 - `SITE_BASE_URL`
 - `STATIC_PUBLIC_DIR`
+
+### 前端统计与广告
+- `GOOGLE_ANALYTICS_ID`（示例：`G-0EJKKR2GSQ`）
+- `GOOGLE_ADSENSE_CLIENT_ID`（示例：`ca-pub-6213686553141996`）
 
 ### Genkit / Prompt
 - `GENKIT_BASEURL`
