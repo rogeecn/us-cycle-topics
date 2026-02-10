@@ -37,6 +37,15 @@ const EnvSchema = z.object({
     },
     z.string().optional(),
   ),
+  GOOGLE_ADSENSE_CLIENT_ID: z.preprocess(
+    (value) => {
+      if (typeof value === "string" && value.trim() === "") {
+        return undefined;
+      }
+      return value;
+    },
+    z.string().optional(),
+  ),
   GENKIT_BASEURL: z.preprocess(
     (value) => {
       if (typeof value === "string" && value.trim() === "") {

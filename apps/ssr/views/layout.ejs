@@ -16,9 +16,16 @@
         gtag("config", "<%= googleAnalyticsId %>");
       </script>
     <% } %>
+    <% if (googleAdsenseClientId) { %>
+      <script
+        async
+        src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=<%= googleAdsenseClientId %>"
+        crossorigin="anonymous"
+      ></script>
+    <% } %>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title><%- title %> - US Cycle Guides</title>
+    <title><%- title === "US Cycle Guides" ? title : `${title} - US Cycle Guides` %></title>
     <script>
       (function (d, e) {
         d[e] = d[e].replace("no-js", "js");

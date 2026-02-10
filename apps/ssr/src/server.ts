@@ -37,6 +37,7 @@ export function createSsrApp(): express.Express {
   app.set("layout", "layout");
 
   app.locals.googleAnalyticsId = env.GOOGLE_ANALYTICS_ID ?? null;
+  app.locals.googleAdsenseClientId = env.GOOGLE_ADSENSE_CLIENT_ID ?? null;
 
   app.use(express.static(path.resolve(process.cwd(), env.STATIC_PUBLIC_DIR)));
 
