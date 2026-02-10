@@ -24,36 +24,20 @@ function buildSourceKey(request: ProducerRequest): string {
 function resolvePostQualityStatus(
   qualityReport: QualityReport,
   minScore: number,
-  softReviewThreshold: number,
 ): {
-  statusAfterQuality: "generated" | "needs_review" | "failed";
+  statusAfterQuality: "generated" | "failed";
   lastError: string | null;
-  reviewReason: string | null;
 } {
   if (qualityReport.hardFailureCount === 0 && qualityReport.scoreTotal >= minScore) {
     return {
       statusAfterQuality: "generated",
       lastError: null,
-      reviewReason: null,
-    };
-  }
-
-  if (
-    qualityReport.hardFailureCount === 0 &&
-    qualityReport.scoreTotal >= softReviewThreshold
-  ) {
-    return {
-      statusAfterQuality: "needs_review",
-      lastError: "quality requires manual review",
-      reviewReason: "quality_below_threshold",
     };
   }
 
   return {
     statusAfterQuality: "failed",
     lastError: "quality validation failed",
-    reviewReason:
-      qualityReport.hardFailureCount > 0 ? "quality_hard_fail" : "quality_soft_fail_low_score",
   };
 }
 
@@ -77,8 +61,6 @@ async function reviseArticleWithFailures(
   qualityReport: QualityReport,
   language: string,
 ): Promise<ArticleOutput> {
-  const env = getEnv();
-
   const revisePrompt = ai.prompt<z.ZodTypeAny, typeof ArticleOutputSchema, z.ZodTypeAny>(
     "seo-revise",
   );
@@ -186,14 +168,13 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
   const qualityDecision = resolvePostQualityStatus(
     qualityReport,
     env.QUALITY_MIN_SCORE,
-    env.QUALITY_SOFT_REVIEW_THRESHOLD,
   );
 
   const contentHash = sha256(`${article.title}\n${article.description}\n${article.content}`);
 
   const duplicate = await findByContentHash(contentHash);
   if (duplicate && duplicate.sourceKey !== buildSourceKey(request)) {
-    logger.warn("duplicate content hash detected, routed to needs_review", {
+    logger.warn("duplicate content hash detected, routed to failed", {
       duplicateId: duplicate.id,
       duplicateSourceKey: duplicate.sourceKey,
       currentSourceKey: buildSourceKey(request),
@@ -220,9 +201,8 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
       },
       qualityReport,
       contentHash,
-      statusAfterQuality: "needs_review",
+      statusAfterQuality: "failed",
       lastError: "duplicate content hash detected",
-      reviewReason: "possible_duplicate_content",
     });
 
     logger.info("producer stored article", {
@@ -234,7 +214,7 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
       qualityScore: duplicateRecord.qualityReport.scoreTotal,
       hardFailureCount: duplicateRecord.qualityReport.hardFailureCount,
       softFailureCount: duplicateRecord.qualityReport.softFailureCount,
-      reviewReason: duplicateRecord.reviewReason,
+      lastError: duplicateRecord.lastError,
     });
 
     return;
@@ -262,7 +242,6 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
     contentHash,
     statusAfterQuality: qualityDecision.statusAfterQuality,
     lastError: qualityDecision.lastError,
-    reviewReason: qualityDecision.reviewReason,
   });
 
   if (record.status === "generated") {
@@ -278,6 +257,6 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
     qualityScore: record.qualityReport.scoreTotal,
     hardFailureCount: record.qualityReport.hardFailureCount,
     softFailureCount: record.qualityReport.softFailureCount,
-    reviewReason: record.reviewReason,
+    lastError: record.lastError,
   });
 }

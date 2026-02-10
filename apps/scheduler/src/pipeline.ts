@@ -4,7 +4,6 @@ import { getEnv } from "../../common/src/env.js";
 import { logger } from "../../common/src/logger.js";
 import {
   acquirePipelineLock,
-  countNeedsReview,
   finishPipelineRun,
   listReadyForPublication,
   markPublished,
@@ -12,7 +11,7 @@ import {
   startPipelineRun,
 } from "../../common/src/repository.js";
 import { PipelineRunRecord, RenderMode } from "../../common/src/types.js";
-import { sendCriticalAlert, sendNeedsReviewAlert } from "./alerts.js";
+import { sendCriticalAlert } from "./alerts.js";
 import { runPreflight } from "./preflight.js";
 
 const LOCK_KEY = 424242;
@@ -27,7 +26,6 @@ export async function runPipeline(mode: RenderMode): Promise<void> {
     mode,
     status: "success",
     publishedCount: 0,
-    needsReviewCount: 0,
     failedCount: 0,
     errorMessage: null,
     startedAt,
@@ -56,28 +54,16 @@ export async function runPipeline(mode: RenderMode): Promise<void> {
       await markPublished(publishIds);
     }
 
-    const needsReviewCount = await countNeedsReview();
-
     stats.publishedCount = publishIds.length;
-    stats.needsReviewCount = needsReviewCount;
     stats.failedCount = 0;
     stats.status = "success";
     stats.errorMessage = null;
     stats.endedAt = new Date();
 
-    if (needsReviewCount >= env.NEEDS_REVIEW_ALERT_THRESHOLD) {
-      await sendNeedsReviewAlert(
-        env.ALERT_WEBHOOK_URL,
-        needsReviewCount,
-        env.NEEDS_REVIEW_ALERT_THRESHOLD,
-      );
-    }
-
     logger.info("pipeline finished", {
       runId,
       mode,
       publishedCount: publishIds.length,
-      needsReviewCount,
       qualityMinScore: env.QUALITY_MIN_SCORE,
     });
   } catch (error) {

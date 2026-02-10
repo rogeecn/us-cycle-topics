@@ -1,12 +1,4 @@
-export const CONTENT_STATUSES = [
-  "draft",
-  "generated",
-  "needs_review",
-  "rendered",
-  "built",
-  "published",
-  "failed",
-] as const;
+export const CONTENT_STATUSES = ["generated", "published", "failed"] as const;
 
 export type ContentStatus = (typeof CONTENT_STATUSES)[number];
 export type QualitySeverity = "hard" | "soft";
@@ -30,14 +22,8 @@ export interface StoredContent {
   contentHash: string;
   status: ContentStatus;
   lastError: string | null;
-  reviewReason: string | null;
-  reviewNotes: string | null;
-  reviewedBy: string | null;
-  reviewedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  renderedAt: Date | null;
-  builtAt: Date | null;
   publishedAt: Date | null;
 }
 
@@ -57,14 +43,12 @@ export interface GeneratedContentInput {
   rawJson: unknown;
   qualityReport: QualityReport;
   contentHash: string;
-  statusAfterQuality: "generated" | "needs_review" | "failed";
+  statusAfterQuality: "generated" | "failed";
   lastError?: string | null;
-  reviewReason?: string | null;
 }
 
 export interface PipelineRunStats {
   publishedCount: number;
-  needsReviewCount: number;
   failedCount: number;
 }
 
@@ -140,18 +124,12 @@ export interface QualityInput {
 
 export interface ReviewStats {
   total: number;
-  draft: number;
   generated: number;
-  needsReview: number;
-  rendered: number;
-  built: number;
   published: number;
   failed: number;
   averageScoreAll: number | null;
   averageScoreGenerated: number | null;
-  averageScoreNeedsReview: number | null;
   averageScoreFailed: number | null;
-  reviewedToday: number;
 }
 
 export interface ProducerRequest {

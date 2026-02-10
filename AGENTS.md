@@ -78,11 +78,10 @@
 - 支持按 `status + updated_at` 做增量扫描。
 
 ### 4.2 状态流转（建议）
-`draft -> generated -> published`  
-审核分支：`generated -> needs_review -> (generated | failed)`  
+`generated -> published`  
 失败统一进入 `failed`，并记录 `last_error`。
 
-> 说明：历史字段 `rendered/built` 可保留兼容，不再作为运行主链路。
+> 说明：`needs_review` 与历史字段 `rendered/built` 已移除，不再作为运行链路。
 
 ### 4.3 幂等性
 - 同一记录重复执行结果应可预测、可覆盖。

@@ -4,7 +4,6 @@ import {
   GeneratedContentInput,
   PipelineRunRecord,
   RenderMode,
-  ReviewStats,
   SidebarData,
   SidebarPost,
   SidebarTermCount,
@@ -30,14 +29,8 @@ interface ArticleRow {
   content_hash: string;
   status: StoredContent["status"];
   last_error: string | null;
-  review_reason: string | null;
-  review_notes: string | null;
-  reviewed_by: string | null;
-  reviewed_at: string | null;
   created_at: string;
   updated_at: string;
-  rendered_at: string | null;
-  built_at: string | null;
   published_at: string | null;
 }
 
@@ -70,14 +63,8 @@ function mapRow(row: ArticleRow): StoredContent {
     contentHash: String(row.content_hash),
     status: row.status,
     lastError: row.last_error,
-    reviewReason: row.review_reason,
-    reviewNotes: row.review_notes,
-    reviewedBy: row.reviewed_by,
-    reviewedAt: row.reviewed_at ? new Date(row.reviewed_at) : null,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
-    renderedAt: row.rendered_at ? new Date(row.rendered_at) : null,
-    builtAt: row.built_at ? new Date(row.built_at) : null,
     publishedAt: row.published_at ? new Date(row.published_at) : null,
   };
 }
@@ -122,13 +109,11 @@ export async function upsertGeneratedContent(
     INSERT INTO seo_articles (
       source_key, topic, city, keyword, title, description, slug, tags, content,
       lastmod, prompt_version, model_version, raw_json, quality_report, content_hash,
-      status, last_error, review_reason, review_notes, reviewed_by, reviewed_at,
-      rendered_at, built_at, published_at
+      status, last_error, published_at
     ) VALUES (
       ?,?,?,?,?,?,?,?,?,
       ?,?,?,?,?,?,
-      ?,?,?,?,?, ?,
-      NULL,NULL,NULL
+      ?,?, NULL
     )
     ON CONFLICT (source_key) DO UPDATE SET
       topic = EXCLUDED.topic,
@@ -147,12 +132,6 @@ export async function upsertGeneratedContent(
       content_hash = EXCLUDED.content_hash,
       status = EXCLUDED.status,
       last_error = EXCLUDED.last_error,
-      review_reason = EXCLUDED.review_reason,
-      review_notes = EXCLUDED.review_notes,
-      reviewed_by = EXCLUDED.reviewed_by,
-      reviewed_at = EXCLUDED.reviewed_at,
-      rendered_at = NULL,
-      built_at = NULL,
       published_at = NULL,
       updated_at = CURRENT_TIMESTAMP
     RETURNING *
@@ -176,10 +155,6 @@ export async function upsertGeneratedContent(
     input.contentHash,
     input.statusAfterQuality,
     input.lastError ?? null,
-    input.reviewReason ?? null,
-    null,
-    null,
-    null,
   ];
 
   const row = db.prepare(query).get(...values) as ArticleRow | undefined;
@@ -197,9 +172,7 @@ export async function listReadyForPublication(
 ): Promise<StoredContent[]> {
   const db = getDb();
   const whereClause =
-    mode === "full"
-      ? "status IN ('generated', 'rendered', 'built', 'published')"
-      : "status = 'generated'";
+    mode === "full" ? "status IN ('generated', 'published')" : "status = 'generated'";
 
   const rows = db
     .prepare(
@@ -242,34 +215,6 @@ export async function markArticleFailed(
      SET status = 'failed', last_error = ?
      WHERE id = ?`,
   ).run(errorMessage, id);
-}
-
-export async function countNeedsReview(): Promise<number> {
-  const db = getDb();
-  const row = db
-    .prepare(
-      `SELECT COUNT(*) AS count
-       FROM seo_articles
-       WHERE status = 'needs_review'`,
-    )
-    .get() as { count: number };
-
-  return Number(row.count);
-}
-
-export async function listNeedsReview(limit: number): Promise<StoredContent[]> {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT *
-       FROM seo_articles
-       WHERE status = 'needs_review'
-       ORDER BY updated_at ASC
-       LIMIT ?`,
-    )
-    .all(limit) as ArticleRow[];
-
-  return rows.map((row) => mapRow(row));
 }
 
 export async function listPublishedArticles(
@@ -421,7 +366,15 @@ export async function getSidebarData(
   };
 }
 
-export async function getReviewStats(): Promise<ReviewStats> {
+export async function getReviewStats(): Promise<{
+  total: number;
+  generated: number;
+  published: number;
+  failed: number;
+  averageScoreAll: number | null;
+  averageScoreGenerated: number | null;
+  averageScoreFailed: number | null;
+}> {
   const db = getDb();
 
   const statusRows = db
@@ -437,100 +390,38 @@ export async function getReviewStats(): Promise<ReviewStats> {
       `SELECT
          AVG(json_extract(quality_report, '$.scoreTotal')) AS avg_all,
          AVG(CASE WHEN status = 'generated' THEN json_extract(quality_report, '$.scoreTotal') END) AS avg_generated,
-         AVG(CASE WHEN status = 'needs_review' THEN json_extract(quality_report, '$.scoreTotal') END) AS avg_needs_review,
          AVG(CASE WHEN status = 'failed' THEN json_extract(quality_report, '$.scoreTotal') END) AS avg_failed
        FROM seo_articles`,
     )
     .get() as {
       avg_all: number | null;
       avg_generated: number | null;
-      avg_needs_review: number | null;
       avg_failed: number | null;
     };
 
-  const reviewedTodayRow = db
-    .prepare(
-      `SELECT COUNT(*) AS count
-       FROM seo_articles
-       WHERE reviewed_at >= date('now')`,
-    )
-    .get() as { count: number };
-
   const counts: Record<string, number> = {
-    draft: 0,
     generated: 0,
-    needs_review: 0,
-    rendered: 0,
-    built: 0,
     published: 0,
     failed: 0,
   };
 
   for (const row of statusRows) {
-    counts[row.status] = Number(row.count);
+    if (row.status in counts) {
+      counts[row.status] = Number(row.count);
+    }
   }
 
   const total = Object.values(counts).reduce((acc, value) => acc + value, 0);
 
   return {
     total,
-    draft: counts.draft,
     generated: counts.generated,
-    needsReview: counts.needs_review,
-    rendered: counts.rendered,
-    built: counts.built,
     published: counts.published,
     failed: counts.failed,
     averageScoreAll: scoreRow?.avg_all ?? null,
     averageScoreGenerated: scoreRow?.avg_generated ?? null,
-    averageScoreNeedsReview: scoreRow?.avg_needs_review ?? null,
     averageScoreFailed: scoreRow?.avg_failed ?? null,
-    reviewedToday: Number(reviewedTodayRow?.count ?? 0),
   };
-}
-
-export async function approveNeedsReview(
-  id: number,
-  reviewer: string,
-  notes: string | null,
-): Promise<boolean> {
-  const db = getDb();
-  const result = db.prepare(
-    `UPDATE seo_articles
-     SET status = 'generated',
-         review_reason = 'approved_by_reviewer',
-         review_notes = ?,
-         reviewed_by = ?,
-         reviewed_at = CURRENT_TIMESTAMP,
-         last_error = NULL,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?
-       AND status = 'needs_review'`,
-  ).run(notes, reviewer, id);
-
-  return result.changes > 0;
-}
-
-export async function rejectNeedsReview(
-  id: number,
-  reviewer: string,
-  notes: string | null,
-): Promise<boolean> {
-  const db = getDb();
-  const result = db.prepare(
-    `UPDATE seo_articles
-     SET status = 'failed',
-         review_reason = 'rejected_by_reviewer',
-         review_notes = ?,
-         reviewed_by = ?,
-         reviewed_at = CURRENT_TIMESTAMP,
-         last_error = 'manual review rejected',
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?
-       AND status = 'needs_review'`,
-  ).run(notes, reviewer, id);
-
-  return result.changes > 0;
 }
 
 export async function acquirePipelineLock(
@@ -600,24 +491,14 @@ export async function finishPipelineRun(
   db.prepare(
     `UPDATE pipeline_runs
       SET status = ?,
-          rendered_count = ?,
-          build_count = ?,
           published_count = ?,
-          publish_eligible_count = ?,
-          blocked_by_quality = ?,
-          needs_review_count = ?,
           failed_count = ?,
           error_message = ?,
           ended_at = ?
       WHERE run_id = ?`,
   ).run(
     record.status,
-    0,
-    0,
     record.publishedCount,
-    0,
-    0,
-    record.needsReviewCount,
     record.failedCount,
     record.errorMessage,
     record.endedAt.toISOString(),

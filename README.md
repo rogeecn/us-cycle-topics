@@ -15,7 +15,7 @@
 
 1. **Producer** (`apps/producer`)
    - Genkit + dotPrompt 生成结构化内容
-   - 入库并完成质量门控（`generated / needs_review / failed`）
+   - 入库并完成质量门控（`generated / failed`）
 
 2. **Store** (`SQLite`)
    - 唯一事实源
@@ -138,9 +138,7 @@ npm run scheduler
 
 ### 质量与调度
 - `QUALITY_MIN_SCORE`
-- `QUALITY_SOFT_REVIEW_THRESHOLD`
 - `PRODUCER_MAX_REVISIONS`
-- `NEEDS_REVIEW_ALERT_THRESHOLD`
 - `SCHEDULER_CRON`
 - `PREFLIGHT_ON_RUN`
 - `RENDER_BATCH_SIZE`
@@ -157,7 +155,7 @@ npm run scheduler
 
 ## 8. 状态语义
 
-- 内容生产后进入：`generated / needs_review / failed`
+- 内容生产后进入：`generated / failed`
 - Pipeline 负责将满足质量阈值的内容推进为 `published`
 - `published` 为 SSR 对外可见状态
 

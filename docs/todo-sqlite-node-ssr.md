@@ -41,7 +41,7 @@
 - [x] P0-2 数据访问层从 `pg` 迁移到 SQLite（连接、事务、锁、仓储接口保持语义一致）。
 - [x] P0-3 迁移脚本改为 SQLite 版本（含 schema_migrations 与索引）。
 - [x] P0-4 preflight/bootstrap 改造为 SQLite 检查流程。
-- [x] P0-5 为 repository 核心状态流转补齐测试（generated/needs_review/rendered/built/published/failed）。
+- [x] P0-5 为 repository 核心状态流转补齐测试（generated/published/failed）。
 
 ## P1 — Node SSR 运行时替换（保留内容生产链路）
 - [x] P1-1 新增 Node SSR 服务骨架（路由、模板渲染、静态资源托管）。

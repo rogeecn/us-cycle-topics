@@ -109,17 +109,17 @@ describe("Repository State Transitions", () => {
     expect(found?.status).toBe("published");
   });
 
-  it("accepts needs_review state", async () => {
+  it("accepts failed state", async () => {
     const record = await upsertGeneratedContent(
       sampleInput({
-        sourceKey: "review-source",
-        contentHash: "review-hash",
-        slug: "review-slug",
-        statusAfterQuality: "needs_review",
+        sourceKey: "failed-source",
+        contentHash: "failed-hash",
+        slug: "failed-slug",
+        statusAfterQuality: "failed",
       }),
     );
 
-    expect(record.status).toBe("needs_review");
+    expect(record.status).toBe("failed");
   });
 
   it("enforces lock ownership for one contender", async () => {

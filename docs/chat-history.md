@@ -36,7 +36,7 @@ source: "基于已落地代码与确认需求重写"
 ### 2) Store（数据层）
 - 数据库：SQLite。
 - 原则：数据库是唯一事实源。
-- 内容状态：`draft | generated | needs_review | published | failed`（历史兼容字段保留）。
+- 内容状态：`generated | published | failed`。
 
 ### 3) SSR（渲染层）
 - 首页、列表、详情页由 Node SSR 提供。
@@ -72,7 +72,7 @@ source: "基于已落地代码与确认需求重写"
 ## 四、任务流（当前）
 
 ### 增量流（默认）
-1. Producer 生成并写入 SQLite（`generated` / `needs_review` / `failed`）。
+1. Producer 生成并写入 SQLite（`generated` / `failed`）。
 2. Scheduler 按质量阈值筛选可发布记录。
 3. 推进为 `published`。
 4. SSR 页面对外可见。

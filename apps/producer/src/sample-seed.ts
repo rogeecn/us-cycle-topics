@@ -143,7 +143,6 @@ async function main(): Promise<void> {
       contentHash,
       statusAfterQuality: qualityReport.passed ? "generated" : "failed",
       lastError: qualityReport.passed ? null : "quality validation failed",
-      reviewReason: qualityReport.passed ? null : "seed_quality_fail",
     });
 
     logger.info("seed record upserted", {
