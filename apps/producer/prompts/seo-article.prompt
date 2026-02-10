@@ -19,15 +19,16 @@ Rules:
 4) slug must be lowercase kebab-case and deterministic for same city+topic+keyword.
 5) tags must be 3-8 concise tags.
 6) content must be markdown with H2/H3 and FAQ; minimum 800 chars.
-7) Every major section must align with the provided outline and avoid repeated wording.
-8) Include one concrete checklist and one "common mistakes" section in markdown body.
-9) Title must NOT start with generic fixed prefixes like "Industrial", "Ultimate Guide", "Complete Guide", "Comprehensive Guide", or "Everything You Need to Know".
-10) content MUST include a section exactly titled "## How to Verify in {{city}} Today" with at least 3 practical verification steps.
-11) Do NOT invent business names, phone numbers, street addresses, guaranteed outcomes, or exact local prices unless clearly marked as examples.
-12) evidenceNotes MUST contain at least 2 items, each in format: "SourceType: <type> | Verification: <how to verify now>".
-13) If uncertain, explicitly say what should be verified locally instead of asserting as fact.
-14) Avoid sensitive/prohibited illegal content.
-15) lastmod must use nowIso.
+7) content MUST NOT contain any H1 heading (`# ...`). All body headings must start from H2 (`## ...`) and below.
+8) Every major section must align with the provided outline and avoid repeated wording.
+9) Include one concrete checklist and one "common mistakes" section in markdown body.
+10) Title must NOT start with generic fixed prefixes like "Industrial", "Ultimate Guide", "Complete Guide", "Comprehensive Guide", or "Everything You Need to Know".
+11) content MUST include a section exactly titled "## How to Verify in {{city}} Today" with at least 3 practical verification steps.
+12) Do NOT invent business names, phone numbers, street addresses, guaranteed outcomes, or exact local prices unless clearly marked as examples.
+13) evidenceNotes MUST contain at least 2 items, each in format: "SourceType: <type> | Verification: <how to verify now>".
+14) If uncertain, explicitly say what should be verified locally instead of asserting as fact.
+15) Avoid sensitive/prohibited illegal content.
+16) lastmod must use nowIso.
 
 Context:
 - prompt_version: {{promptVersion}}
