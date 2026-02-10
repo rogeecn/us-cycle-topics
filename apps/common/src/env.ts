@@ -28,6 +28,15 @@ function booleanFlag(defaultValue: boolean) {
 const EnvSchema = z.object({
   SQLITE_DB_PATH: z.string().default("./db/us-cycle-topics.db"),
   SITE_BASE_URL: z.string().url().default("http://localhost:3000"),
+  GOOGLE_ANALYTICS_ID: z.preprocess(
+    (value) => {
+      if (typeof value === "string" && value.trim() === "") {
+        return undefined;
+      }
+      return value;
+    },
+    z.string().optional(),
+  ),
   GENKIT_BASEURL: z.preprocess(
     (value) => {
       if (typeof value === "string" && value.trim() === "") {

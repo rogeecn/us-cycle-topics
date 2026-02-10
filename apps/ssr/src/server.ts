@@ -36,6 +36,8 @@ export function createSsrApp(): express.Express {
   app.set("views", path.join(__dirname, "../views"));
   app.set("layout", "layout");
 
+  app.locals.googleAnalyticsId = env.GOOGLE_ANALYTICS_ID ?? null;
+
   app.use(express.static(path.resolve(process.cwd(), env.STATIC_PUBLIC_DIR)));
 
   app.get("/", async (req, res) => {
