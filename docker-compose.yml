@@ -1,9 +1,6 @@
 services:
   migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: us-cycle-topics:latest
+    image: ghcr.io/rogeecn/us-cycle-topics:latest
     container_name: us-cycle-topics-migrate
     command: ["npm", "run", "bootstrap"]
     environment:
@@ -17,10 +14,7 @@ services:
     restart: "no"
 
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: us-cycle-topics:latest
+    image: ghcr.io/rogeecn/us-cycle-topics:latest
     container_name: us-cycle-topics-web
     restart: unless-stopped
     init: true
@@ -41,10 +35,7 @@ services:
       - sqlite_data:/data
 
   scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: us-cycle-topics:latest
+    image: ghcr.io/rogeecn/us-cycle-topics:latest
     container_name: us-cycle-topics-scheduler
     restart: unless-stopped
     init: true
