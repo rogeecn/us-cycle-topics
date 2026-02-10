@@ -52,7 +52,7 @@ export function createSsrApp(): express.Express {
     const pageItems = hasNextPage ? articles.slice(0, pageSize) : articles;
 
     res.render("index", {
-      title: "US Cycle Topics",
+      title: "US Cycle Guides",
       description: "Sustainable waste management and recycling solutions across the USA.",
       canonicalUrl: buildPageUrl(env.SITE_BASE_URL, req.originalUrl),
       articles: pageItems,
