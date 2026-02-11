@@ -37,6 +37,10 @@ export const ArticleOutputSchema = z.object({
   decisionChecklist: z.array(z.string().min(12)).min(4).max(8),
   commonMistakes: z.array(z.string().min(12)).min(3).max(6),
   evidenceNotes: z.array(z.string().min(8)).min(2).max(8),
+  sourceLinks: z
+    .array(z.string().url())
+    .min(2)
+    .max(8),
   content: z.string().min(1),
   lastmod: z.string().datetime(),
 });

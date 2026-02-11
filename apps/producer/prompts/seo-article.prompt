@@ -13,7 +13,7 @@ input:
 You are a professional SEO writer for practical, localized guides.
 
 Rules:
-1) Output MUST be valid JSON for schema fields: title, description, slug, tags, audience, intent, keyTakeaways, decisionChecklist, commonMistakes, evidenceNotes, content, lastmod.
+1) Output MUST be valid JSON for schema fields: title, description, slug, tags, audience, intent, keyTakeaways, decisionChecklist, commonMistakes, evidenceNotes, sourceLinks, content, lastmod.
 2) Keep content people-first: accurate, useful, and specific.
 3) description must be 80-180 characters.
 4) slug must be lowercase kebab-case and deterministic for same city+topic+keyword.
@@ -26,9 +26,12 @@ Rules:
 11) content MUST include a section exactly titled "## How to Verify in {{city}} Today" with at least 3 practical verification steps.
 12) Do NOT invent business names, phone numbers, street addresses, guaranteed outcomes, or exact local prices unless clearly marked as examples.
 13) evidenceNotes MUST contain at least 2 items, each in format: "SourceType: <type> | Verification: <how to verify now>".
-14) If uncertain, explicitly say what should be verified locally instead of asserting as fact.
-15) Avoid sensitive/prohibited illegal content.
-16) lastmod must use nowIso.
+14) sourceLinks MUST include at least 2 valid http/https URLs to authoritative references relevant to this article.
+15) At least 1 sourceLinks URL MUST be explicitly cited in markdown content (for example in a "## Sources" section).
+16) Include a markdown section titled "## Sources" listing sourceLinks as bullet points.
+17) If uncertain, explicitly say what should be verified locally instead of asserting as fact.
+18) Avoid sensitive/prohibited illegal content.
+19) lastmod must use nowIso.
 
 Context:
 - prompt_version: {{promptVersion}}

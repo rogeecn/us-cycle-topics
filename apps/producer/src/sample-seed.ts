@@ -84,11 +84,23 @@ async function main(): Promise<void> {
     const slug = `smoke-${token}-forklift-scrap-${token}`;
     const tags = ["smoke-test", "recycling", "forklift", `batch-${token}`];
     const content = buildContent(city, topic, keyword);
+    const sourceLinks = [
+      "https://www.epa.gov/recycle",
+      "https://www.sba.gov/business-guide/manage-your-business",
+    ];
+    const normalizedSourceLinks = sourceLinks.map((link) => {
+      const parsed = new URL(link);
+      parsed.hash = "";
+      parsed.search = "";
+      return parsed.toString();
+    });
+    const contentWithSources = `${content}\n\n## Sources\n${normalizedSourceLinks.map((link) => `- ${link}`).join("\n")}`;
+
     const qualityReport = evaluateQuality({
       title,
       description,
       tags,
-      content,
+      content: contentWithSources,
       audience: "Small recycling operators evaluating practical process options",
       intent: "Understand practical price and execution factors before choosing a workflow",
       keyTakeaways: [
@@ -108,9 +120,10 @@ async function main(): Promise<void> {
         "Not defining responsibility for follow-up review",
       ],
       evidenceNotes: [
-        "Local process constraints often drive outcomes more than headline pricing",
-        "Pilot-first execution reduces rework risk before scale-up",
+        "SourceType: municipal guideline | Verification: check official city sanitation portal for current acceptance rules",
+        "SourceType: operations checklist | Verification: confirm vendor documentation and service coverage before pickup",
       ],
+      sourceLinks: normalizedSourceLinks,
     });
 
     const rawJson = {
@@ -118,12 +131,13 @@ async function main(): Promise<void> {
       description,
       slug,
       tags,
-      content,
+      content: contentWithSources,
+      sourceLinks: normalizedSourceLinks,
       lastmod: new Date().toISOString(),
       seed: true,
     };
 
-    const contentHash = sha256(`${title}\n${description}\n${content}`);
+    const contentHash = sha256(`${title}\n${description}\n${contentWithSources}`);
 
     const record = await upsertGeneratedContent({
       sourceKey: `smoke::${token}`,
@@ -134,7 +148,7 @@ async function main(): Promise<void> {
       description,
       slug,
       tags,
-      content,
+      content: contentWithSources,
       lastmod: new Date(),
       promptVersion: "smoke-seed-v1",
       modelVersion: "seed/manual",

@@ -10,8 +10,10 @@ import {
 import { getEnv } from "../../common/src/env.js";
 import { logger } from "../../common/src/logger.js";
 import { evaluateQuality } from "../../common/src/quality.js";
+import { normalizeError } from "../../common/src/errors.js";
 import { sha256 } from "../../common/src/hash.js";
 import {
+  countPublishedWithStructureSignature,
   findByContentHash,
   markPublished,
   upsertGeneratedContent,
@@ -22,15 +24,84 @@ function buildSourceKey(request: ProducerRequest): string {
   return `${request.city}::${request.topic}::${request.keyword}`.toLowerCase();
 }
 
-function normalizeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function isQualityPassed(qualityReport: QualityReport, minScore: number): boolean {
   return qualityReport.hardFailureCount === 0 && qualityReport.scoreTotal >= minScore;
 }
 
-function evaluateArticle(article: ArticleOutput): QualityReport {
+function buildStructureSignature(content: string): string {
+  const headingLines = content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^#{2,3}\s+/.test(line))
+    .map((line) => line.toLowerCase().replace(/\s+/g, " "));
+
+  return headingLines.join("|");
+}
+
+function normalizeUrl(link: string): string {
+  try {
+    const parsed = new URL(link.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+    parsed.hash = "";
+    parsed.search = "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function maybeAppendSourcesSection(content: string, sourceLinks: string[]): string {
+  if (sourceLinks.length === 0) {
+    return content;
+  }
+
+  if (content.includes("## Sources")) {
+    return content;
+  }
+
+  const references = sourceLinks.map((link) => `- ${link}`).join("\n");
+  return `${content.trim()}\n\n## Sources\n${references}`;
+}
+
+async function probeSourceLinks(sourceLinks: string[]): Promise<string[]> {
+  const uniqueUrls = Array.from(
+    new Set(sourceLinks.map((link) => normalizeUrl(link)).filter((link) => link.length > 0)),
+  );
+
+  const reachable: string[] = [];
+
+  for (const url of uniqueUrls) {
+    try {
+      const response = await fetch(url, {
+        method: "HEAD",
+        redirect: "follow",
+      });
+
+      if (response.ok) {
+        reachable.push(url);
+      }
+    } catch (error) {
+      logger.warn("producer source link probe failed", {
+        url,
+        message: normalizeError(error),
+      });
+    }
+  }
+
+  return reachable;
+}
+
+function evaluateArticle(
+  article: ArticleOutput,
+  options?: {
+    duplicatedStructureCount?: number;
+    maxDuplicatedStructureCount?: number;
+    reachableSourceLinksCount?: number;
+    minSourceLinks?: number;
+  },
+): QualityReport {
   return evaluateQuality({
     title: article.title,
     description: article.description,
@@ -42,6 +113,11 @@ function evaluateArticle(article: ArticleOutput): QualityReport {
     decisionChecklist: article.decisionChecklist,
     commonMistakes: article.commonMistakes,
     evidenceNotes: article.evidenceNotes,
+    sourceLinks: article.sourceLinks,
+    duplicatedStructureCount: options?.duplicatedStructureCount,
+    maxDuplicatedStructureCount: options?.maxDuplicatedStructureCount,
+    reachableSourceLinksCount: options?.reachableSourceLinksCount,
+    minSourceLinks: options?.minSourceLinks,
   });
 }
 
@@ -104,6 +180,8 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
     maxAttempts,
     maxRevisionsPerAttempt: env.PRODUCER_MAX_REVISIONS,
     qualityMinScore: env.QUALITY_MIN_SCORE,
+    minSourceLinks: env.QUALITY_MIN_SOURCE_LINKS,
+    maxPublishedSameStructure: env.QUALITY_MAX_PUBLISHED_SAME_STRUCTURE,
   });
 
   let lastFailureMessage: string | null = null;
@@ -190,7 +268,30 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
         tagsCount: article.tags.length,
       });
 
-      let qualityReport = evaluateArticle(article);
+      article = {
+        ...article,
+        sourceLinks: Array.from(
+          new Set(
+            article.sourceLinks
+              .map((link) => normalizeUrl(link))
+              .filter((link): link is string => link.length > 0),
+          ),
+        ),
+      };
+      article = {
+        ...article,
+        content: maybeAppendSourcesSection(article.content, article.sourceLinks),
+      };
+
+      let structureSignature = buildStructureSignature(article.content);
+      let duplicatedStructureCount = await countPublishedWithStructureSignature(structureSignature);
+      let reachableSourceLinks = await probeSourceLinks(article.sourceLinks);
+      let qualityReport = evaluateArticle(article, {
+        duplicatedStructureCount,
+        maxDuplicatedStructureCount: env.QUALITY_MAX_PUBLISHED_SAME_STRUCTURE,
+        reachableSourceLinksCount: reachableSourceLinks.length,
+        minSourceLinks: env.QUALITY_MIN_SOURCE_LINKS,
+      });
       logger.info("producer quality evaluated", {
         runId,
         sourceKey,
@@ -200,6 +301,8 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
         hardFailureCount: qualityReport.hardFailureCount,
         softFailureCount: qualityReport.softFailureCount,
         failureCodes: qualityReport.failureCodes,
+        duplicatedStructureCount,
+        reachableSourceLinksCount: reachableSourceLinks.length,
         passed: isQualityPassed(qualityReport, env.QUALITY_MIN_SCORE),
       });
 
@@ -221,7 +324,29 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
           qualityReport,
           commonInput.language,
         );
-        qualityReport = evaluateArticle(article);
+        article = {
+          ...article,
+          sourceLinks: Array.from(
+            new Set(
+              article.sourceLinks
+                .map((link) => normalizeUrl(link))
+                .filter((link): link is string => link.length > 0),
+            ),
+          ),
+        };
+        article = {
+          ...article,
+          content: maybeAppendSourcesSection(article.content, article.sourceLinks),
+        };
+        structureSignature = buildStructureSignature(article.content);
+        duplicatedStructureCount = await countPublishedWithStructureSignature(structureSignature);
+        reachableSourceLinks = await probeSourceLinks(article.sourceLinks);
+        qualityReport = evaluateArticle(article, {
+          duplicatedStructureCount,
+          maxDuplicatedStructureCount: env.QUALITY_MAX_PUBLISHED_SAME_STRUCTURE,
+          reachableSourceLinksCount: reachableSourceLinks.length,
+          minSourceLinks: env.QUALITY_MIN_SOURCE_LINKS,
+        });
 
         logger.info("producer revision completed", {
           runId,
@@ -232,6 +357,8 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
           hardFailureCount: qualityReport.hardFailureCount,
           softFailureCount: qualityReport.softFailureCount,
           failureCodes: qualityReport.failureCodes,
+          duplicatedStructureCount,
+          reachableSourceLinksCount: reachableSourceLinks.length,
           passed: isQualityPassed(qualityReport, env.QUALITY_MIN_SCORE),
         });
       }
@@ -250,6 +377,51 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
           hardFailureCount: qualityReport.hardFailureCount,
           softFailureCount: qualityReport.softFailureCount,
           failureCodes: qualityReport.failureCodes,
+          duplicatedStructureCount,
+          reachableSourceLinksCount: reachableSourceLinks.length,
+        });
+        continue;
+      }
+
+      const sanitizedSourceLinks = article.sourceLinks
+        .map((link) => normalizeUrl(link))
+        .filter((link): link is string => link.length > 0);
+      article = {
+        ...article,
+        sourceLinks: Array.from(new Set(sanitizedSourceLinks)),
+      };
+
+      article = {
+        ...article,
+        content: maybeAppendSourcesSection(article.content, article.sourceLinks),
+      };
+
+      structureSignature = buildStructureSignature(article.content);
+      duplicatedStructureCount = await countPublishedWithStructureSignature(structureSignature);
+      reachableSourceLinks = await probeSourceLinks(article.sourceLinks);
+      qualityReport = evaluateArticle(article, {
+        duplicatedStructureCount,
+        maxDuplicatedStructureCount: env.QUALITY_MAX_PUBLISHED_SAME_STRUCTURE,
+        reachableSourceLinksCount: reachableSourceLinks.length,
+        minSourceLinks: env.QUALITY_MIN_SOURCE_LINKS,
+      });
+
+      if (!isQualityPassed(qualityReport, env.QUALITY_MIN_SCORE)) {
+        lastFailureMessage = "quality validation failed";
+        lastFailureCodes = qualityReport.failureCodes;
+        lastQualityScore = qualityReport.scoreTotal;
+
+        logger.warn("producer attempt failed post-normalization quality gate, retrying", {
+          runId,
+          sourceKey,
+          attempt,
+          maxAttempts,
+          scoreTotal: qualityReport.scoreTotal,
+          hardFailureCount: qualityReport.hardFailureCount,
+          softFailureCount: qualityReport.softFailureCount,
+          failureCodes: qualityReport.failureCodes,
+          duplicatedStructureCount,
+          reachableSourceLinksCount: reachableSourceLinks.length,
         });
         continue;
       }
@@ -293,6 +465,9 @@ export async function produceArticle(request: ProducerRequest): Promise<void> {
           outline,
           article,
           qualityReport,
+          structureSignature,
+          duplicatedStructureCount,
+          reachableSourceLinks,
         },
         qualityReport,
         contentHash,
