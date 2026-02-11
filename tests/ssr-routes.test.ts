@@ -35,6 +35,10 @@ function qualityReport(score: number): QualityReport {
       faqQuestions: 2,
       repeatedLineCount: 0,
       repeatedBigramCount: 0,
+      sourceLinksCount: 2,
+      validSourceLinksCount: 2,
+      linkedSourceCount: 1,
+      duplicatedStructureCount: 0,
     },
   };
 }
@@ -70,6 +74,8 @@ describe("SSR data routing contracts", () => {
     }
     process.env.SQLITE_DB_PATH = TEST_DB_PATH;
     process.env.SITE_BASE_URL = "http://localhost:3000";
+    process.env.SITE_CONTACT_EMAIL = "editor@example.com";
+    process.env.GOOGLE_ADSENSE_CLIENT_ID = "ca-pub-1234567890";
     await runMigration();
   });
 
@@ -137,5 +143,60 @@ describe("SSR data routing contracts", () => {
     expect(response.text).toContain("City");
     expect(response.text).toContain("a");
     expect(response.text).toContain("(12)");
+    expect(response.text).toContain("/about");
+    expect(response.text).toContain("/privacy");
+    expect(response.text).toContain("googlesyndication.com/pagead/js/adsbygoogle.js");
+  });
+
+  it("renders trust pages and disables adsense script", async () => {
+    const inserted = await upsertGeneratedContent(
+      sampleInput({
+        sourceKey: "trust-page-source",
+        slug: "trust-page-article",
+        contentHash: "trust-page-hash",
+      }),
+    );
+    await markPublished([inserted.id]);
+
+    const app = createSsrApp();
+    const response = await request(app).get("/privacy");
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain("Privacy Policy");
+    expect(response.text).toContain("google.com/policies/privacy/partners/");
+    expect(response.text).not.toContain("googlesyndication.com/pagead/js/adsbygoogle.js");
+  });
+
+  it("serves robots and sitemap endpoints", async () => {
+    const inserted = await upsertGeneratedContent(
+      sampleInput({
+        sourceKey: "sitemap-source",
+        slug: "sitemap-article",
+        contentHash: "sitemap-hash",
+      }),
+    );
+    await markPublished([inserted.id]);
+
+    const app = createSsrApp();
+
+    const robotsResponse = await request(app).get("/robots.txt");
+    expect(robotsResponse.status).toBe(200);
+    expect(robotsResponse.text).toContain("User-agent: *");
+    expect(robotsResponse.text).toContain("Sitemap: http://localhost:3000/sitemap.xml");
+
+    const sitemapResponse = await request(app).get("/sitemap.xml");
+    expect(sitemapResponse.status).toBe(200);
+    expect(sitemapResponse.text).toContain("<urlset");
+    expect(sitemapResponse.text).toContain("http://localhost:3000/about");
+    expect(sitemapResponse.text).toContain("http://localhost:3000/posts/sitemap-article");
+  });
+
+  it("returns 404 pages with noindex and no adsense", async () => {
+    const app = createSsrApp();
+    const response = await request(app).get("/missing-page");
+
+    expect(response.status).toBe(404);
+    expect(response.text).toContain('name="robots" content="noindex, nofollow"');
+    expect(response.text).not.toContain("googlesyndication.com/pagead/js/adsbygoogle.js");
   });
 });

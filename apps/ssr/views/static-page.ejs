@@ -1,0 +1,28 @@
+<main class="main" role="main">
+  <article class="post">
+    <header class="post__header">
+      <h1 class="post__title"><%= page.heading %></h1>
+    </header>
+    <div class="content post__content clearfix">
+      <% if (page.path === "/contact") { %>
+        <p>
+          Email:
+          <% if (siteContactEmail) { %>
+            <a href="mailto:<%= siteContactEmail %>"><%= siteContactEmail %></a>
+          <% } else { %>
+            Please configure <code>SITE_CONTACT_EMAIL</code> before production use.
+          <% } %>
+        </p>
+      <% } %>
+
+      <% page.sections.forEach(section => { %>
+        <section>
+          <h2><%= section.heading %></h2>
+          <% section.paragraphs.forEach(paragraph => { %>
+            <p><%= paragraph %></p>
+          <% }) %>
+        </section>
+      <% }) %>
+    </div>
+  </article>
+</main>
