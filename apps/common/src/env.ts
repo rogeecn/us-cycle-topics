@@ -28,6 +28,15 @@ function booleanFlag(defaultValue: boolean) {
 const EnvSchema = z.object({
   SQLITE_DB_PATH: z.string().default("./db/us-cycle-topics.db"),
   SITE_BASE_URL: z.string().url().default("http://localhost:3000"),
+  SITE_CONTACT_EMAIL: z.preprocess(
+    (value) => {
+      if (typeof value === "string" && value.trim() === "") {
+        return undefined;
+      }
+      return value;
+    },
+    z.string().email().optional(),
+  ),
   GOOGLE_ANALYTICS_ID: z.preprocess(
     (value) => {
       if (typeof value === "string" && value.trim() === "") {
@@ -60,6 +69,8 @@ const EnvSchema = z.object({
   PRODUCER_OUTLINE_PROMPT_NAME: z.string().default("seo-outline"),
   PRODUCER_PROMPT_NAME: z.string().default("seo-article"),
   QUALITY_MIN_SCORE: z.coerce.number().min(0).max(100).default(70),
+  QUALITY_MIN_SOURCE_LINKS: z.coerce.number().int().min(1).max(10).default(2),
+  QUALITY_MAX_PUBLISHED_SAME_STRUCTURE: z.coerce.number().int().min(1).max(20).default(3),
   PRODUCER_MAX_REVISIONS: z.coerce.number().int().min(0).max(5).default(2),
   PRODUCER_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
   STATIC_PUBLIC_DIR: z.string().default("./static-public"),
