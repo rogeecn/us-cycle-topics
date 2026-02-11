@@ -90,6 +90,11 @@ export interface QualityReport {
     faqQuestions: number;
     repeatedLineCount: number;
     repeatedBigramCount: number;
+    sourceLinksCount?: number;
+    validSourceLinksCount?: number;
+    linkedSourceCount?: number;
+    duplicatedStructureCount?: number | null;
+    reachableSourceLinksCount?: number;
   };
 }
 
@@ -104,6 +109,11 @@ export interface QualityInput {
   decisionChecklist: string[];
   commonMistakes: string[];
   evidenceNotes: string[];
+  sourceLinks: string[];
+  duplicatedStructureCount?: number;
+  maxDuplicatedStructureCount?: number;
+  reachableSourceLinksCount?: number;
+  minSourceLinks?: number;
 }
 
 export interface QualityStats {

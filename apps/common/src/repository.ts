@@ -274,6 +274,125 @@ export async function getPublishedArticleBySlug(
   return mapRow(row);
 }
 
+export async function listPublishedArticleSitemapEntries(
+  limit: number,
+  offset: number = 0,
+): Promise<Array<{ slug: string; lastmod: Date }>> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT slug, lastmod
+       FROM seo_articles
+       WHERE status = 'published'
+       ORDER BY lastmod DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(limit, offset) as Array<{ slug: string; lastmod: string }>;
+
+  return rows.map((row) => ({
+    slug: row.slug,
+    lastmod: new Date(row.lastmod),
+  }));
+}
+
+export async function countPublishedWithStructureSignature(
+  structureSignature: string,
+): Promise<number> {
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM seo_articles
+       WHERE status = 'published'
+         AND json_extract(raw_json, '$.structureSignature') = ?`,
+    )
+    .get(structureSignature) as { count: number } | undefined;
+
+  return Number(row?.count ?? 0);
+}
+
+export async function getPublishedQualitySummary(): Promise<{
+  publishedCount: number;
+  averageScore: number | null;
+  minScore: number | null;
+}> {
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT
+         COUNT(*) AS published_count,
+         AVG(CAST(json_extract(quality_report, '$.scoreTotal') AS REAL)) AS average_score,
+         MIN(CAST(json_extract(quality_report, '$.scoreTotal') AS REAL)) AS min_score
+       FROM seo_articles
+       WHERE status = 'published'`,
+    )
+    .get() as {
+      published_count: number;
+      average_score: number | null;
+      min_score: number | null;
+    };
+
+  return {
+    publishedCount: Number(row?.published_count ?? 0),
+    averageScore: row?.average_score ?? null,
+    minScore: row?.min_score ?? null,
+  };
+}
+
+export async function samplePublishedForReadiness(limit: number): Promise<
+  Array<{
+    id: number;
+    slug: string;
+    title: string;
+    qualityScore: number | null;
+    sourceLinksCount: number;
+    structureSignature: string | null;
+    hasVerifySection: boolean;
+  }>
+> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT
+         id,
+         slug,
+         title,
+         CAST(json_extract(quality_report, '$.scoreTotal') AS REAL) AS quality_score,
+         json_array_length(
+           COALESCE(
+             json_extract(raw_json, '$.article.sourceLinks'),
+             json_extract(raw_json, '$.sourceLinks'),
+             '[]'
+           )
+         ) AS source_links_count,
+         json_extract(raw_json, '$.structureSignature') AS structure_signature,
+         CASE WHEN instr(content, '## How to Verify in ') > 0 THEN 1 ELSE 0 END AS has_verify_section
+       FROM seo_articles
+       WHERE status = 'published'
+       ORDER BY updated_at DESC
+       LIMIT ?`,
+    )
+    .all(limit) as Array<{
+      id: number;
+      slug: string;
+      title: string;
+      quality_score: number | null;
+      source_links_count: number;
+      structure_signature: string | null;
+      has_verify_section: 0 | 1;
+    }>;
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    slug: String(row.slug),
+    title: String(row.title),
+    qualityScore: row.quality_score,
+    sourceLinksCount: Number(row.source_links_count ?? 0),
+    structureSignature: row.structure_signature,
+    hasVerifySection: row.has_verify_section === 1,
+  }));
+}
+
 export async function getSidebarData(
   options?: {
     recentLimit?: number;

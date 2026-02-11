@@ -12,6 +12,7 @@
     "scheduler": "tsx apps/scheduler/src/daemon.ts",
     "preflight": "tsx apps/scheduler/src/preflight-cli.ts",
     "doctor": "tsx apps/scheduler/src/doctor.ts",
+    "readiness:adsense": "tsx apps/scheduler/src/readiness.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "ssr": "tsx apps/ssr/src/server.ts"

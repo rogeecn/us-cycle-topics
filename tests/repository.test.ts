@@ -4,8 +4,10 @@ import { resetDbForTests } from "../apps/common/src/db.js";
 import { resetEnvForTests } from "../apps/common/src/env.js";
 import {
   acquirePipelineLock,
+  countPublishedWithStructureSignature,
   findByContentHash,
   markPublished,
+  samplePublishedForReadiness,
   upsertGeneratedContent,
 } from "../apps/common/src/repository.js";
 import type { GeneratedContentInput, QualityReport } from "../apps/common/src/types.js";
@@ -38,6 +40,10 @@ function qualityReport(score: number): QualityReport {
       faqQuestions: 2,
       repeatedLineCount: 0,
       repeatedBigramCount: 0,
+      sourceLinksCount: 2,
+      validSourceLinksCount: 2,
+      linkedSourceCount: 1,
+      duplicatedStructureCount: 0,
     },
   };
 }
@@ -119,5 +125,35 @@ describe("Repository State Transitions", () => {
 
     expect(first).toBe(true);
     expect(second).toBe(false);
+  });
+
+  it("tracks structure signature and source links in readiness sample", async () => {
+    const record = await upsertGeneratedContent(
+      sampleInput({
+        sourceKey: "readiness-source",
+        slug: "readiness-slug",
+        contentHash: "readiness-hash",
+        content: "## H2 A\n\nBody\n\n## How to Verify in City Today\n- step\n\n## Sources\n- https://example.com/a\n- https://example.com/b",
+        rawJson: {
+          structureSignature: "## h2 a|## how to verify in city today|## sources",
+          sourceLinks: ["https://example.com/a", "https://example.com/b"],
+        },
+      }),
+    );
+
+    await markPublished([record.id]);
+
+    const count = await countPublishedWithStructureSignature(
+      "## h2 a|## how to verify in city today|## sources",
+    );
+    expect(count).toBe(1);
+
+    const sample = await samplePublishedForReadiness(10);
+    const item = sample.find((row) => row.slug === "readiness-slug");
+
+    expect(item).toBeDefined();
+    expect(item?.sourceLinksCount).toBe(2);
+    expect(item?.hasVerifySection).toBe(true);
+    expect(item?.structureSignature).toContain("sources");
   });
 });

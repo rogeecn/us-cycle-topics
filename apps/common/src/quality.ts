@@ -22,6 +22,8 @@ const HARD_FAIL_RULES = new Set([
   "content-min-length",
   "forbidden-term",
   "fabricated-local-specifics",
+  "source-links-minimum",
+  "template-structure-overused",
 ]);
 
 function round(value: number): number {
@@ -55,6 +57,15 @@ function includesLikelyFabricatedLocalSpecifics(content: string): boolean {
   const hasGuaranteedPattern = /\b(guaranteed|100% guaranteed|risk-free)\b/i.test(content);
 
   return hasPhonePattern || hasAddressPattern || hasGuaranteedPattern;
+}
+
+function hasValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function countRepeatedLines(content: string): number {
@@ -122,6 +133,16 @@ export function evaluateQuality(input: QualityInput): QualityReport {
   const faqQuestions = countMatches(input.content, /^#{3,4}\s+.*\?\s*$/gm);
   const repeatedLineCount = countRepeatedLines(input.content);
   const repeatedBigramCount = countRepeatedBigrams(input.content);
+  const sourceLinksCount = input.sourceLinks.length;
+  const validSourceLinksCount = input.sourceLinks.filter((link) => hasValidHttpUrl(link)).length;
+  const linkedSourceCount = input.sourceLinks.filter((link) => input.content.includes(link)).length;
+  const reachableSourceLinksCount = Math.min(
+    input.reachableSourceLinksCount ?? validSourceLinksCount,
+    validSourceLinksCount,
+  );
+  const minSourceLinks = input.minSourceLinks ?? 2;
+  const duplicatedStructureCount = input.duplicatedStructureCount ?? null;
+  const maxDuplicatedStructureCount = input.maxDuplicatedStructureCount ?? 3;
 
   const dimensions = {
     structure: {
@@ -300,6 +321,36 @@ export function evaluateQuality(input: QualityInput): QualityReport {
     );
   }
 
+  if (
+    sourceLinksCount >= minSourceLinks &&
+    validSourceLinksCount >= minSourceLinks &&
+    reachableSourceLinksCount >= minSourceLinks
+  ) {
+    dimensions.specificity.score = round(
+      Math.min(dimensions.specificity.score + 2, dimensions.specificity.max),
+    );
+  } else {
+    pushFailure(
+      failures,
+      "source-links-minimum",
+      `sourceLinks must include at least ${String(minSourceLinks)} reachable valid http/https URLs`,
+      10,
+    );
+  }
+
+  if (linkedSourceCount >= 1) {
+    dimensions.antiRepetition.score = round(
+      Math.min(dimensions.antiRepetition.score + 1, dimensions.antiRepetition.max),
+    );
+  } else {
+    pushFailure(
+      failures,
+      "source-link-not-referenced",
+      "at least one sourceLinks URL should appear in article content for transparency",
+      2,
+    );
+  }
+
   const verificationSectionCount = countMatches(
     input.content,
     /^##\s+How to Verify in .* Today\s*$/gim,
@@ -315,6 +366,21 @@ export function evaluateQuality(input: QualityInput): QualityReport {
       "content should include section '## How to Verify in <city> Today' with practical steps",
       4,
     );
+  }
+
+  if (duplicatedStructureCount !== null) {
+    if (duplicatedStructureCount >= maxDuplicatedStructureCount) {
+      pushFailure(
+        failures,
+        "template-structure-overused",
+        `article structure signature is overused in published content (>=${String(maxDuplicatedStructureCount)} matches)`,
+        12,
+      );
+    } else {
+      dimensions.antiRepetition.score = round(
+        Math.min(dimensions.antiRepetition.score + 2, dimensions.antiRepetition.max),
+      );
+    }
   }
 
   if (includesLikelyFabricatedLocalSpecifics(input.content)) {
@@ -379,6 +445,11 @@ export function evaluateQuality(input: QualityInput): QualityReport {
       faqQuestions,
       repeatedLineCount,
       repeatedBigramCount,
+      sourceLinksCount,
+      validSourceLinksCount,
+      linkedSourceCount,
+      duplicatedStructureCount,
+      reachableSourceLinksCount,
     },
   };
 }
