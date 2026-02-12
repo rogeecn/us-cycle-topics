@@ -114,6 +114,7 @@ export interface QualityInput {
   maxDuplicatedStructureCount?: number;
   reachableSourceLinksCount?: number;
   minSourceLinks?: number;
+  allowUnreachableSourceLinks?: boolean;
 }
 
 export interface QualityStats {

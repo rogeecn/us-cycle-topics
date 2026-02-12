@@ -25,6 +25,7 @@ const HARD_FAIL_RULES = new Set([
   "source-links-minimum",
   "template-structure-overused",
 ]);
+const REPEATED_BIGRAM_LIMIT = 10;
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
@@ -141,6 +142,7 @@ export function evaluateQuality(input: QualityInput): QualityReport {
     validSourceLinksCount,
   );
   const minSourceLinks = input.minSourceLinks ?? 2;
+  const allowUnreachableSourceLinks = input.allowUnreachableSourceLinks ?? false;
   const duplicatedStructureCount = input.duplicatedStructureCount ?? null;
   const maxDuplicatedStructureCount = input.maxDuplicatedStructureCount ?? 3;
 
@@ -283,13 +285,13 @@ export function evaluateQuality(input: QualityInput): QualityReport {
     pushFailure(failures, "repeated-lines", "content contains repeated long lines", 10);
   }
 
-  if (repeatedBigramCount <= 6) {
+  if (repeatedBigramCount <= REPEATED_BIGRAM_LIMIT) {
     dimensions.antiRepetition.score += 8;
   } else {
     pushFailure(
       failures,
       "repeated-bigrams",
-      "content has excessive repeated bigrams",
+      `content has excessive repeated bigrams (>${String(REPEATED_BIGRAM_LIMIT)})`,
       8,
     );
   }
@@ -321,11 +323,12 @@ export function evaluateQuality(input: QualityInput): QualityReport {
     );
   }
 
-  if (
+  const meetsLinkThreshold =
     sourceLinksCount >= minSourceLinks &&
     validSourceLinksCount >= minSourceLinks &&
-    reachableSourceLinksCount >= minSourceLinks
-  ) {
+    (allowUnreachableSourceLinks || reachableSourceLinksCount >= minSourceLinks);
+
+  if (meetsLinkThreshold) {
     dimensions.specificity.score = round(
       Math.min(dimensions.specificity.score + 2, dimensions.specificity.max),
     );
@@ -333,7 +336,9 @@ export function evaluateQuality(input: QualityInput): QualityReport {
     pushFailure(
       failures,
       "source-links-minimum",
-      `sourceLinks must include at least ${String(minSourceLinks)} reachable valid http/https URLs`,
+      allowUnreachableSourceLinks
+        ? `sourceLinks must include at least ${String(minSourceLinks)} valid http/https URLs`
+        : `sourceLinks must include at least ${String(minSourceLinks)} reachable valid http/https URLs`,
       10,
     );
   }
